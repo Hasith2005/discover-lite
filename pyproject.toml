@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "discover-lite"
+version = "0.1.0"
+description = "Static analyser for AI agent configurations."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Hasith Kakarla" }]
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2",
+    "typer",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+discover-lite = "discover_lite.cli:app"
+
+# Tell setuptools the package lives under src/.
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# Lets tests import discover_lite without installing the package first.
+pythonpath = ["src"]
+testpaths = ["tests"]
