@@ -12,8 +12,22 @@ from discover_lite.models import Agent, Tool
 
 AGENT_TYPE = "microsoft.copilotstudio/agents"
 
-# Verbs that suggest an operation changes something.
-WRITE_VERBS = {"add", "create", "update", "delete", "send", "post", "run"}
+# Words that suggest an operation changes something.
+WRITE_WORDS = {
+    "add", "create", "insert", "update", "edit", "modify", "patch", "set",
+    "upsert", "replace", "rename", "move", "copy", "upload", "save", "write",
+    "import", "delete", "remove", "purge", "clear", "archive", "cancel", "close",
+    "send", "post", "reply", "forward", "share", "publish", "submit", "approve",
+    "reject", "assign", "grant", "revoke", "invite", "transfer", "pay", "refund",
+    "reset", "lock", "unlock", "enable", "disable", "mark", "flag", "apply",
+    "run", "execute", "invoke", "trigger", "start", "stop", "restart",
+}
+
+# Words that suggest an operation only reads.
+READ_WORDS = {
+    "get", "list", "search", "find", "read", "query", "fetch", "lookup", "look",
+    "view", "show", "retrieve", "download", "describe", "count", "browse",
+}
 
 
 def matches(data: object) -> bool:
@@ -26,7 +40,10 @@ def matches(data: object) -> bool:
 
 
 def split_words(operation_id: str) -> list[str]:
-    """Split a CamelCase name into lowercase words: "SendEmailV2" -> ["send", "email", "v", "2"]."""
+    """Split a name into lowercase words: "SendEmailV2" -> ["send", "email", "v", "2"].
+
+    Works for CamelCase and snake_case ("send_email" -> ["send", "email"]).
+    """
     # Matches a capitalised word, a run of capitals (like "URL"), or digits.
     return [w.lower() for w in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", operation_id)]
 
@@ -35,12 +52,20 @@ def infer_capability(operation_id: str) -> str:
     """Guess whether an operation reads or writes, from its name.
 
     This is a heuristic: the export does not say what an operation does, so we
-    look for write-like verbs. We compare whole words, so "GetAddress" is not
-    mistaken for "add".
+    look for known words. It fails closed:
+    - any write word means "write", even if a read word is also present
+      ("UpdateReadStatus" is a write);
+    - otherwise any read word means "read";
+    - anything else is "unknown", never "read", so a gap in the word lists
+      shows up instead of hiding a risky tool.
+    We compare whole words, so "GetAddress" is not mistaken for "add".
     """
-    if WRITE_VERBS & set(split_words(operation_id)):
+    words = set(split_words(operation_id))
+    if words & WRITE_WORDS:
         return "write"
-    return "read"
+    if words & READ_WORDS:
+        return "read"
+    return "unknown"
 
 
 def parse(data: dict, path: Path) -> Agent:

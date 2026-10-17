@@ -13,6 +13,7 @@ from discover_lite.checks import (
     redact,
     run_all,
     secret_in_config,
+    unclassified_tool,
     unpinned_package,
 )
 from discover_lite.cli import app
@@ -245,10 +246,34 @@ def test_open_access_does_not_fire(fields):
     assert open_access(copilot_agent(**fields)) == []
 
 
+# --- unclassified_tool ------------------------------------------------------
+
+
+def test_unclassified_tool_fires():
+    tool = Tool(name="EscalateCase", capability="unknown", requires_approval=False)
+    findings = unclassified_tool(copilot_agent(tools=[tool]))
+    assert [f.severity for f in findings] == ["low"]
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        Tool(name="EscalateCase", capability="unknown", requires_approval=True),
+        # Platform does not say whether approval is needed: do not fire.
+        Tool(name="EscalateCase", capability="unknown", requires_approval=None),
+        # Classified tools are handled by other checks.
+        Tool(name="GetFile", capability="read", requires_approval=False),
+        write_tool(requires_approval=False),
+    ],
+)
+def test_unclassified_tool_does_not_fire(tool):
+    assert unclassified_tool(copilot_agent(tools=[tool])) == []
+
+
 # --- end to end -------------------------------------------------------------
 
 
-def test_fixtures_trigger_all_six_checks():
+def test_fixtures_trigger_every_check():
     fired = set()
     for path in FIXTURES.glob("*.json"):
         fired |= {f.check_id for f in run_all(load_any(path))}

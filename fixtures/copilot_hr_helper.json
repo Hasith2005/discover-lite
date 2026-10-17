@@ -12,7 +12,8 @@
       {
         "operations": [
           {"operationId": "SendEmailV2", "usedAs": "Tool", "requiresEndUserConsent": false},
-          {"operationId": "GetMyProfile", "usedAs": "Topic Tool"}
+          {"operationId": "GetMyProfile", "usedAs": "Topic Tool"},
+          {"operationId": "EscalateCase", "usedAs": "Tool", "requiresEndUserConsent": false}
         ]
       },
       {

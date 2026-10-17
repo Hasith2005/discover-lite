@@ -55,3 +55,7 @@ def scan(
         f"{len(results)} agents, {len(all_findings)} findings "
         f"({counts['high']} high, {counts['medium']} medium, {counts['low']} low)"
     )
+    # Show the limits of the capability heuristic, not just its results.
+    tools = [t for agent, _ in results for t in agent.tools]
+    unknown = sum(t.capability == "unknown" for t in tools)
+    typer.echo(f"{unknown} of {len(tools)} tools could not be classified as read or write")

@@ -51,6 +51,8 @@ def test_copilot_export_fixture():
             Tool(name="SendEmailV2", capability="write", requires_approval=False),
             # No requiresEndUserConsent key, so approval stays None.
             Tool(name="GetMyProfile", capability="read", requires_approval=None),
+            # "Escalate" is in neither word list.
+            Tool(name="EscalateCase", capability="unknown", requires_approval=False),
         ],
         untrusted_knowledge=True,
         authentication="None",
@@ -72,10 +74,19 @@ def test_copilot_export_fixture():
         ("SendEmailV2", "write"),
         ("CreateItem", "write"),
         ("DeleteFile", "write"),
+        ("TransferFunds", "write"),
+        ("RemoveUser", "write"),
+        ("send_email", "write"),
+        # A write word wins over a read word: fail closed.
+        ("UpdateReadStatus", "write"),
         ("GetMyProfile", "read"),
         ("ListRows", "read"),
+        ("LookUpRecord", "read"),
         # "Address" contains "add" but is not the word "add".
         ("GetAddress", "read"),
+        # No known word: unknown, never read.
+        ("EscalateCase", "unknown"),
+        ("Foo", "unknown"),
     ],
 )
 def test_infer_capability(operation_id, expected):

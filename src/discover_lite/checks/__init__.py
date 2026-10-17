@@ -216,6 +216,26 @@ def open_access(agent: Agent) -> list[Finding]:
     return findings
 
 
+def unclassified_tool(agent: Agent) -> list[Finding]:
+    """A tool whose name we could not classify, running without approval.
+
+    The capability comes from a word-list heuristic. When it returns "unknown",
+    we cannot tell whether the tool is risky, so we say so instead of guessing.
+    """
+    return [
+        Finding(
+            check_id="unclassified_tool",
+            agent_id=agent.id,
+            severity="low",
+            evidence=f"Tool '{tool.name}' could not be classified as read or write and runs without approval",
+            recommendation="Review what this tool does; if it changes data, require approval.",
+        )
+        for tool in agent.tools
+        # As elsewhere, only an explicit False counts; None does not fire.
+        if tool.capability == "unknown" and tool.requires_approval is False
+    ]
+
+
 ALL_CHECKS = [
     secret_in_config,
     unpinned_package,
@@ -223,6 +243,7 @@ ALL_CHECKS = [
     missing_scope,
     no_human_in_loop,
     open_access,
+    unclassified_tool,
 ]
 
 
