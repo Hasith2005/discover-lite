@@ -11,23 +11,58 @@ from urllib.parse import urlparse
 
 from discover_lite.models import Agent, Finding
 
-# A value like "${API_KEY}" is a reference to an environment variable, which is
-# the safe way to pass a secret, so it is not a finding.
-ENV_REFERENCE = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+# A reference to a value stored elsewhere, which is the safe way to pass a
+# secret, so it is not a finding: "${API_KEY}", "${env:API_KEY}" or
+# "${input:token}" (VS Code), "$API_KEY", "%API_KEY%" (Windows), "{{api_key}}".
+REFERENCE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%|\{\{[^}]+\}\}")
+
+# Text that marks a value as a placeholder someone is meant to replace, such as
+# "YOUR_API_KEY", "<token>", "xxxx", "sk-..." or "replace-me". Real configs
+# copied from READMEs are full of these, and they are not secrets.
+PLACEHOLDER = re.compile(
+    r"your|<[^>]*>|\[[^\]]*\]|x{4,}|\*{3,}|\.\.\.|example|placeholder|"
+    r"change[_-]?me|replace|insert|here|todo|redacted|dummy|sample",
+    re.IGNORECASE,
+)
+
+# Values that are a default or a word, not a chosen secret.
+DEFAULT_VALUES = {"password", "secret", "token", "apikey", "api_key", "admin", "root", "changeme"}
+
+# Name endings that mean the value describes a secret rather than being one,
+# e.g. AUTH_METHOD, TOKEN_URL, KEY_FILE.
+SETTING_NAME_ENDINGS = (
+    "_url", "_uri", "_path", "_file", "_dir", "_method", "_type", "_mode",
+    "_enabled", "_provider", "_host", "_port",
+)
+
+# Real secrets are long; shorter values under a secret-sounding name are
+# usually settings like "true" or "local".
+MIN_SECRET_LENGTH = 8
 
 # Parts of a name that suggest the value is a secret. Matched as substrings of
 # the lowercased name, so "DB_PASSWORD" and "Authorization" both match.
 SECRET_NAME_WORDS = ("key", "token", "secret", "password", "auth", "credential")
 
-# Well-known key formats: OpenAI-style, GitHub personal access token, AWS access key id.
+# Well-known key formats: OpenAI/Anthropic style, GitHub tokens (classic and
+# fine-grained), AWS access key id, Slack token, Google API key.
 KNOWN_KEY_FORMATS = [
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(r"ghp_[A-Za-z0-9]{36}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{22,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"AIza[0-9A-Za-z_-]{35}"),
 ]
 
 # Commands that download and run a package in one step.
 PACKAGE_RUNNERS = {"npx", "uvx", "bunx", "pnpx"}
+
+# Runner flags whose value is the package to fetch: "npx -p pkg cmd",
+# "npx --package=pkg cmd", "uvx --from pkg cmd".
+PACKAGE_FLAGS = {"-p", "--package", "--from"}
+
+# Other runner flags that take a value, which must be skipped over.
+VALUE_FLAGS = {"--with", "--python", "--index-url"}
 
 # Exact versions: "pkg@1.2.3" or "@scope/pkg@1.2.3" (npm style, optional
 # pre-release like "-beta.1"), or "pkg==1.2.3" (Python style).
@@ -45,12 +80,39 @@ def redact(value: str) -> str:
     return value[:3] + "****"
 
 
+def _is_real_value(value: str) -> bool:
+    """False for empty values, references to other places, and placeholders.
+
+    A reference anywhere in the value counts, e.g. "${HOME}/keys/a.json".
+    """
+    return (
+        bool(value)
+        and not REFERENCE.search(value)
+        and not PLACEHOLDER.search(value)
+        and value.lower() not in DEFAULT_VALUES
+    )
+
+
 def _looks_like_secret(name: str, value: str) -> bool:
-    if not value or ENV_REFERENCE.fullmatch(value):
+    if not _is_real_value(value):
         return False
-    if any(word in name.lower() for word in SECRET_NAME_WORDS):
+    if any(pattern.search(value) for pattern in KNOWN_KEY_FORMATS):
         return True
-    return any(pattern.search(value) for pattern in KNOWN_KEY_FORMATS)
+    if not any(word in name.lower() for word in SECRET_NAME_WORDS):
+        return False
+    if name.lower().endswith(SETTING_NAME_ENDINGS):
+        return False
+    # A secret-sounding name, but the value may still be a setting, not a secret.
+    is_setting = (
+        len(value) < MIN_SECRET_LENGTH
+        or value.lower() in ("true", "false")
+        or value.isdigit()
+        # A URL or a file path, e.g. AUTH_URL or KEY_FILE. A path to a key file
+        # is not the key itself.
+        or value.startswith(("http://", "https://", "/", "~", "./", "../"))
+        or re.match(r"[A-Za-z]:\\", value) is not None  # Windows path like C:\
+    )
+    return not is_setting
 
 
 def secret_in_config(agent: Agent) -> list[Finding]:
@@ -76,7 +138,7 @@ def secret_in_config(agent: Agent) -> list[Finding]:
         for arg in server.args:
             for pattern in KNOWN_KEY_FORMATS:
                 match = pattern.search(arg)
-                if match:
+                if match and _is_real_value(match.group()):
                     findings.append(
                         Finding(
                             check_id="secret_in_config",
@@ -87,6 +149,26 @@ def secret_in_config(agent: Agent) -> list[Finding]:
                         )
                     )
     return findings
+
+
+def _package_argument(args: list[str]) -> str | None:
+    """The package a runner will fetch, or None if there is none to judge."""
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in PACKAGE_FLAGS:
+            return args[i + 1] if i + 1 < len(args) else None
+        # "--package=pkg" style: the package is after the "=".
+        flag, _, value = arg.partition("=")
+        if value and flag in PACKAGE_FLAGS:
+            return value
+        if arg in VALUE_FLAGS:
+            i += 2  # Skip the flag and its value.
+            continue
+        if not arg.startswith("-"):
+            return arg
+        i += 1
+    return None
 
 
 def _is_pinned(package: str) -> bool:
@@ -100,9 +182,7 @@ def unpinned_package(agent: Agent) -> list[Finding]:
         # Path(...).name turns "/usr/bin/npx" into "npx".
         if server.command is None or Path(server.command).name not in PACKAGE_RUNNERS:
             continue
-        # The package is the first argument that is not a flag like "-y".
-        # Limitation: a flag that takes a value (e.g. "--from pkg") is not handled.
-        package = next((a for a in server.args if not a.startswith("-")), None)
+        package = _package_argument(server.args)
         if package is None:
             continue
         if not _is_pinned(package):

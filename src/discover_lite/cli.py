@@ -1,4 +1,9 @@
-"""Command-line entry point: discover-lite <folder> [--json]."""
+"""Command-line entry point.
+
+    discover-lite scan <folder> [--json]
+    discover-lite fetch-github [--limit N]
+    discover-lite stats <folder>
+"""
 
 import json
 from pathlib import Path
@@ -6,6 +11,7 @@ from pathlib import Path
 import typer
 
 from discover_lite.checks import run_all
+from discover_lite import fetch_github, stats
 from discover_lite.connectors import load_any
 
 app = typer.Typer(help="Static analyser for AI agent configurations.")
@@ -59,3 +65,29 @@ def scan(
     tools = [t for agent, _ in results for t in agent.tools]
     unknown = sum(t.capability == "unknown" for t in tools)
     typer.echo(f"{unknown} of {len(tools)} tools could not be classified as read or write")
+
+
+@app.command("fetch-github")
+def fetch_github_command(
+    limit: int = typer.Option(300, help="Maximum number of configs to download."),
+    out: Path = typer.Option(Path("data/github-configs"), help="Folder to save them in."),
+) -> None:
+    """Download public MCP client configs from GitHub (needs `gh auth login`)."""
+    saved = fetch_github.fetch(out, limit, echo=typer.echo)
+    typer.echo(f"Saved {saved} configs to {out}")
+
+
+@app.command("stats")
+def stats_command(
+    folder: Path = typer.Argument(..., exists=True, file_okay=False, help="Folder of configs."),
+) -> None:
+    """Print aggregate statistics (counts only, never values or names)."""
+    agents, skipped = stats.collect(folder)
+    typer.echo("| Measure | Count | Share |")
+    typer.echo("|---|---|---|")
+    for label, count, share in stats.compute(agents, skipped):
+        typer.echo(f"| {label} | {count} | {share} |")
+    typer.echo("")
+    typer.echo("Most common commands for local servers:")
+    for command, count in stats.top_commands(agents):
+        typer.echo(f"  {command}: {count}")

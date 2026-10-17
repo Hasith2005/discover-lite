@@ -68,6 +68,7 @@ def test_redact_keeps_three_characters():
         {"env": {"OPENAI": FAKE_OPENAI_KEY}},
         {"args": ["--token", FAKE_GITHUB_TOKEN]},
         {"args": [f"--aws={FAKE_AWS_KEY}"]},
+        {"env": {"SLACK": "xoxb-FAKE-FOR-TESTS-1234"}},
     ],
 )
 def test_secret_in_config_fires(fields):
@@ -85,6 +86,33 @@ def test_secret_in_config_fires(fields):
         {"env": {"API_KEY": ""}},
         # A plain word in args is not a key, even after "--token".
         {"args": ["-y", "some-package", "--token", "short"]},
+        # Other reference styles.
+        {"env": {"API_KEY": "${env:API_KEY}"}},
+        {"env": {"API_KEY": "${input:api_key}"}},
+        {"env": {"API_KEY": "$API_KEY"}},
+        {"env": {"API_KEY": "%API_KEY%"}},
+        {"env": {"API_KEY": "{{api_key}}"}},
+        # Placeholders copied from READMEs.
+        {"env": {"API_KEY": "YOUR_API_KEY_HERE"}},
+        {"env": {"GITHUB_TOKEN": "<your-token>"}},
+        {"env": {"SECRET": "xxxxxxxxxxxx"}},
+        {"env": {"OPENAI_API_KEY": "sk-..."}},
+        {"env": {"OPENAI_API_KEY": "sk-your-openai-api-key-goes-in"}},
+        {"headers": {"Authorization": "Bearer <token>"}},
+        {"args": ["--key", "sk-replace-with-your-real-key"]},
+        # Settings that sit under secret-sounding names.
+        {"env": {"AUTH_ENABLED": "true"}},
+        {"env": {"TOKEN_LIMIT": "100000000"}},
+        {"env": {"AUTH_URL": "https://auth.example.com/login"}},
+        {"env": {"KEY_FILE": "/home/demo/.ssh/id_ed25519"}},
+        {"env": {"KEY_FILE": "C:\\Users\\demo\\key.pem"}},
+        # A reference followed by a path.
+        {"env": {"OAUTH_SECRETS_FILE": "${HOME}/keys/client.json"}},
+        # Names that describe a secret rather than hold one.
+        {"env": {"AUTH_METHOD": "api_key_header"}},
+        {"env": {"TOKEN_PROVIDER": "azure_cli_login"}},
+        # Default words, not chosen secrets.
+        {"env": {"NEO4J_PASSWORD": "password"}},
     ],
 )
 def test_secret_in_config_does_not_fire(fields):
@@ -117,6 +145,9 @@ def test_secret_never_appears_in_evidence(fields, secret):
         ("uvx", ["mcp-server-git"]),
         ("/usr/local/bin/bunx", ["some-package"]),
         ("pnpx", ["some-package@1"]),
+        ("npx", ["-p", "some-package", "some-command"]),
+        ("uvx", ["--from", "git+https://example.com/repo", "server"]),
+        ("uvx", ["--python", "3.12", "mcp-server-git"]),
     ],
 )
 def test_unpinned_package_fires(command, args):
@@ -132,6 +163,10 @@ def test_unpinned_package_fires(command, args):
         ("npx", ["-y", "@scope/some-package@1.2.3"]),
         ("npx", ["some-package@2.0.0-beta.1"]),
         ("uvx", ["mcp-server-git==1.2.3"]),
+        # The package comes from the flag, not the command after it.
+        ("npx", ["--package=some-package@1.2.3", "some-command"]),
+        ("npx", ["-p", "some-package@1.2.3", "some-command"]),
+        ("uvx", ["--from", "mcp-server-git==1.2.3", "mcp-server-git"]),
         # Not a package runner.
         ("node", ["server.js"]),
         # No package argument at all: nothing to judge.
@@ -282,13 +317,27 @@ def test_fixtures_trigger_every_check():
 
 @pytest.mark.parametrize("extra_args", [[], ["--json"]])
 def test_cli_never_prints_fixture_secret(extra_args):
-    result = CliRunner().invoke(app, [str(FIXTURES), *extra_args])
+    result = CliRunner().invoke(app, ["scan", str(FIXTURES), *extra_args])
     assert result.exit_code == 0
     assert "FAKE_DB_PASSWORD_FOR_TESTS" not in result.output
 
 
 def test_cli_json_output():
-    result = CliRunner().invoke(app, [str(FIXTURES), "--json"])
+    result = CliRunner().invoke(app, ["scan", str(FIXTURES), "--json"])
     data = json.loads(result.output)
     names = {entry["agent"]["name"] for entry in data}
     assert names == {"claude_desktop_config.json", "HR Helper"}
+
+
+def test_stats_on_fixtures():
+    from discover_lite import stats
+
+    agents, skipped = stats.collect(FIXTURES)
+    rows = {label: (count, share) for label, count, share in stats.compute(agents, skipped)}
+    assert rows["Configs parsed"] == (2, "100.0%")
+    assert rows["Servers"][0] == 4
+    # postgres is unpinned, filesystem is pinned.
+    assert rows["Package-runner servers with no exact version"] == (1, "50.0%")
+    # legacy-wiki is plain HTTP; tickets is HTTPS with an Authorization header.
+    assert rows["Remote servers on plain HTTP (non-local)"] == (1, "50.0%")
+    assert rows["Servers with a hard-coded secret"] == (1, "25.0%")
