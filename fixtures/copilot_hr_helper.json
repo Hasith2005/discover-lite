@@ -1,0 +1,29 @@
+{
+  "type": "microsoft.copilotstudio/agents",
+  "properties": {
+    "displayName": "HR Helper",
+    "instructions": "Help employees.",
+    "authentication": "None",
+    "sharedWithViewers": {
+      "entireTenant": true
+    },
+    "IsWebSearchEnabledForKnowledge": true,
+    "powerPlatformConnectors": [
+      {
+        "operations": [
+          {"operationId": "SendEmailV2", "usedAs": "Tool", "requiresEndUserConsent": false},
+          {"operationId": "GetMyProfile", "usedAs": "Topic Tool"}
+        ]
+      },
+      {
+        "operations": [
+          {"operationId": "GetFileContent", "usedAs": "Knowledge"}
+        ]
+      }
+    ],
+    "topics": {
+      "reset_password": ["reset my password", "I forgot my password", "change my password"],
+      "unlock_account": ["unlock my account", "my account is locked", "locked out after too many password attempts"]
+    }
+  }
+}

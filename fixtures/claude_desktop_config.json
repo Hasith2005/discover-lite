@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/app"],
+      "env": {
+        "DB_PASSWORD": "FAKE_DB_PASSWORD_FOR_TESTS"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem@0.6.2", "/home/demo/projects"]
+    },
+    "tickets": {
+      "type": "http",
+      "url": "https://tickets.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${TICKETS_TOKEN}"
+      }
+    },
+    "legacy-wiki": {
+      "type": "http",
+      "url": "http://wiki.example.com/mcp"
+    }
+  }
+}
