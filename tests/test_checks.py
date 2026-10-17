@@ -10,6 +10,7 @@ from discover_lite.checks import (
     missing_scope,
     no_human_in_loop,
     open_access,
+    prompt_injection_exposure,
     redact,
     run_all,
     secret_in_config,
@@ -312,6 +313,41 @@ def test_unclassified_tool_fires():
 )
 def test_unclassified_tool_does_not_fire(tool):
     assert unclassified_tool(copilot_agent(tools=[tool])) == []
+
+
+# --- prompt_injection_exposure ----------------------------------------------
+
+
+def test_prompt_injection_exposure_fires_for_hr_helper():
+    agent = load_any(FIXTURES / "copilot_hr_helper.json")
+    [finding] = prompt_injection_exposure(agent)
+    assert finding.severity == "high"
+    assert "SendEmailV2" in finding.evidence
+    # EscalateCase is "unknown", so it is not named as an action tool.
+    assert "EscalateCase" not in finding.evidence
+
+
+@pytest.mark.parametrize("capability", ["write", "execute"])
+def test_prompt_injection_exposure_fires(capability):
+    tool = Tool(name="DoThing", capability=capability)
+    findings = prompt_injection_exposure(copilot_agent(untrusted_knowledge=True, tools=[tool]))
+    assert [f.severity for f in findings] == ["high"]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        # Only read-only tools: nothing to act with.
+        {"untrusted_knowledge": True, "tools": [Tool(name="GetFile", capability="read")]},
+        # An unclassified tool is unclassified_tool's job, not this check's.
+        {"untrusted_knowledge": True, "tools": [Tool(name="Mystery", capability="unknown")]},
+        # Platform does not say whether it reads untrusted content.
+        {"untrusted_knowledge": None, "tools": [write_tool(requires_approval=False)]},
+        {"untrusted_knowledge": False, "tools": [write_tool(requires_approval=False)]},
+    ],
+)
+def test_prompt_injection_exposure_does_not_fire(fields):
+    assert prompt_injection_exposure(copilot_agent(**fields)) == []
 
 
 # --- end to end -------------------------------------------------------------

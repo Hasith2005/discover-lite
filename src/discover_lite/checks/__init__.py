@@ -325,6 +325,30 @@ def unclassified_tool(agent: Agent) -> list[Finding]:
     ]
 
 
+def prompt_injection_exposure(agent: Agent) -> list[Finding]:
+    """An agent that reads untrusted content and can also take actions.
+
+    Text from the web can carry hidden instructions, and an agent that obeys
+    them with a write or execute tool can act for the attacker.
+    """
+    # "is not True", not "not ...": None means the platform does not say.
+    if agent.untrusted_knowledge is not True:
+        return []
+    # "unknown" does not count here; unclassified_tool covers that case.
+    action_tools = [tool.name for tool in agent.tools if tool.capability in ("write", "execute")]
+    if not action_tools:
+        return []
+    return [
+        Finding(
+            check_id="prompt_injection_exposure",
+            agent_id=agent.id,
+            severity="high",
+            evidence=f"Reads untrusted content (e.g. web search) and can act with: {', '.join(action_tools)}",
+            recommendation="Turn off untrusted knowledge sources, or require approval for every action tool.",
+        )
+    ]
+
+
 ALL_CHECKS = [
     secret_in_config,
     unpinned_package,
@@ -333,6 +357,7 @@ ALL_CHECKS = [
     no_human_in_loop,
     open_access,
     unclassified_tool,
+    prompt_injection_exposure,
 ]
 
 
