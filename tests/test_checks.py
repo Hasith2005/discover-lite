@@ -341,3 +341,22 @@ def test_stats_on_fixtures():
     # legacy-wiki is plain HTTP; tickets is HTTPS with an Authorization header.
     assert rows["Remote servers on plain HTTP (non-local)"] == (1, "50.0%")
     assert rows["Servers with a hard-coded secret"] == (1, "25.0%")
+
+
+def test_review_secrets_lists_file_but_not_secret():
+    result = CliRunner().invoke(app, ["review-secrets", str(FIXTURES)])
+    assert result.exit_code == 0
+    assert "claude_desktop_config.json" in result.output
+    assert "FAK****" in result.output
+    assert "FAKE_DB_PASSWORD_FOR_TESTS" not in result.output
+
+
+def test_findings_by_check_on_fixtures():
+    from discover_lite import stats
+
+    agents, _ = stats.collect(FIXTURES)
+    rows = {(check, sev): (n, configs) for check, sev, n, configs, _ in stats.findings_by_check(agents)}
+    # HR Helper has two open_access findings of different severities.
+    assert rows[("open_access", "high")] == (1, 1)
+    assert rows[("open_access", "medium")] == (1, 1)
+    assert rows[("secret_in_config", "high")] == (1, 1)

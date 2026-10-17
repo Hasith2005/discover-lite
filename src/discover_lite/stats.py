@@ -87,3 +87,24 @@ def top_commands(agents: list[Agent], n: int = 8) -> list[tuple[str, int]]:
         Path(s.command).name for a in agents for s in a.servers if s.command is not None
     )
     return commands.most_common(n)
+
+
+def findings_by_check(agents: list[Agent]) -> list[tuple[str, str, int, int, str]]:
+    """Rows of (check id, severity, findings, configs affected, share of configs).
+
+    A check can report more than one severity (insecure_remote_server has a
+    high and a low case), so each (check, severity) pair gets its own row.
+    """
+    findings = Counter()
+    configs = Counter()
+    for agent in agents:
+        pairs = [(f.check_id, f.severity) for f in run_all(agent)]
+        findings.update(pairs)
+        configs.update(set(pairs))  # Count each config once per row.
+    order = {"high": 0, "medium": 1, "low": 2}
+    rows = sorted(findings, key=lambda pair: (order[pair[1]], -configs[pair]))
+    return [
+        (check, severity, findings[(check, severity)], configs[(check, severity)],
+         percent(configs[(check, severity)], len(agents)))
+        for check, severity in rows
+    ]

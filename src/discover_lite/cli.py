@@ -3,6 +3,7 @@
     discover-lite scan <folder> [--json]
     discover-lite fetch-github [--limit N]
     discover-lite stats <folder>
+    discover-lite review-secrets <folder>
 """
 
 import json
@@ -10,7 +11,7 @@ from pathlib import Path
 
 import typer
 
-from discover_lite.checks import run_all
+from discover_lite.checks import run_all, secret_in_config
 from discover_lite import fetch_github, stats
 from discover_lite.connectors import load_any
 
@@ -88,6 +89,34 @@ def stats_command(
     for label, count, share in stats.compute(agents, skipped):
         typer.echo(f"| {label} | {count} | {share} |")
     typer.echo("")
+    typer.echo("| Check | Severity | Findings | Configs affected | Share of configs |")
+    typer.echo("|---|---|---|---|---|")
+    for check, severity, n_findings, n_configs, share in stats.findings_by_check(agents):
+        typer.echo(f"| {check} | {severity} | {n_findings} | {n_configs} | {share} |")
+    typer.echo("")
     typer.echo("Most common commands for local servers:")
     for command, count in stats.top_commands(agents):
         typer.echo(f"  {command}: {count}")
+
+
+@app.command("review-secrets")
+def review_secrets_command(
+    folder: Path = typer.Argument(..., exists=True, file_okay=False, help="Folder of configs."),
+) -> None:
+    """List each hard-coded secret hit for manual review (values redacted).
+
+    Shows the local file to open, so a person can decide whether each hit is
+    real, a test value or a false positive before any rate is quoted.
+    """
+    hits = 0
+    for path in sorted(folder.rglob("*.json")):
+        agent = load_any(path)
+        if agent is None:
+            continue
+        findings = secret_in_config(agent)
+        if findings:
+            typer.echo(str(path))
+            for f in findings:
+                typer.echo(f"  {f.evidence}")
+            hits += len(findings)
+    typer.echo(f"Hits to review: {hits}")
