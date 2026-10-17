@@ -2,6 +2,7 @@
 
     discover-lite scan <folder> [--json]
     discover-lite fetch-github [--limit N]
+    discover-lite fetch-registry [--limit N]
     discover-lite stats <folder>
     discover-lite review-secrets <folder>
 """
@@ -12,8 +13,8 @@ from pathlib import Path
 import typer
 
 from discover_lite.checks import run_all, secret_in_config
-from discover_lite import fetch_github, stats
-from discover_lite.connectors import load_any
+from discover_lite import fetch_github, fetch_registry, stats
+from discover_lite.connectors import load_agents
 
 app = typer.Typer(help="Static analyser for AI agent configurations.")
 
@@ -29,11 +30,10 @@ def scan(
     """Scan every .json file under FOLDER and report risky agent setups."""
     results = []
     for path in sorted(folder.rglob("*.json")):
-        agent = load_any(path)
-        if agent is None:
-            continue  # Not a config format we recognise.
-        findings = sorted(run_all(agent), key=lambda f: SEVERITY_ORDER[f.severity])
-        results.append((agent, findings))
+        # Files we do not recognise give no agents and are skipped.
+        for agent in load_agents(path):
+            findings = sorted(run_all(agent), key=lambda f: SEVERITY_ORDER[f.severity])
+            results.append((agent, findings))
 
     if as_json:
         output = [
@@ -86,7 +86,7 @@ def stats_command(
     agents, skipped = stats.collect(folder)
     typer.echo("| Measure | Count | Share |")
     typer.echo("|---|---|---|")
-    for label, count, share in stats.compute(agents, skipped):
+    for label, count, share in stats.compute(agents, skipped) + stats.registry_rows(agents):
         typer.echo(f"| {label} | {count} | {share} |")
     typer.echo("")
     typer.echo("| Check | Severity | Findings | Configs affected | Share of configs |")
@@ -110,13 +110,21 @@ def review_secrets_command(
     """
     hits = 0
     for path in sorted(folder.rglob("*.json")):
-        agent = load_any(path)
-        if agent is None:
-            continue
-        findings = secret_in_config(agent)
-        if findings:
-            typer.echo(str(path))
-            for f in findings:
-                typer.echo(f"  {f.evidence}")
-            hits += len(findings)
+        for agent in load_agents(path):
+            findings = secret_in_config(agent)
+            if findings:
+                typer.echo(f"{path}  ({agent.id})")
+                for f in findings:
+                    typer.echo(f"  {f.evidence}")
+                hits += len(findings)
     typer.echo(f"Hits to review: {hits}")
+
+
+@app.command("fetch-registry")
+def fetch_registry_command(
+    limit: int = typer.Option(0, help="Stop after this many entries (0 = fetch everything)."),
+    out: Path = typer.Option(Path("data/registry"), help="Folder to save pages in."),
+) -> None:
+    """Download server definitions from the official MCP Registry."""
+    entries = fetch_registry.fetch(out, limit, echo=typer.echo)
+    typer.echo(f"Saved {entries} entries to {out}")

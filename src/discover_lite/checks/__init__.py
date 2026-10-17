@@ -45,13 +45,16 @@ SECRET_NAME_WORDS = ("key", "token", "secret", "password", "auth", "credential")
 
 # Well-known key formats: OpenAI/Anthropic style, GitHub tokens (classic and
 # fine-grained), AWS access key id, Slack token, Google API key.
+# Each must start at a word boundary: without it, "sk-" matched inside
+# package names such as "breakerdesk-electrician-tools" and "task-graph-mcp".
+_START = r"(?<![A-Za-z0-9])"
 KNOWN_KEY_FORMATS = [
-    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
-    re.compile(r"ghp_[A-Za-z0-9]{36}"),
-    re.compile(r"github_pat_[A-Za-z0-9_]{22,}"),
-    re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
-    re.compile(r"AIza[0-9A-Za-z_-]{35}"),
+    re.compile(_START + r"sk-[A-Za-z0-9_-]{20,}"),
+    re.compile(_START + r"ghp_[A-Za-z0-9]{36}"),
+    re.compile(_START + r"github_pat_[A-Za-z0-9_]{22,}"),
+    re.compile(_START + r"AKIA[0-9A-Z]{16}"),
+    re.compile(_START + r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(_START + r"AIza[0-9A-Za-z_-]{35}"),
 ]
 
 # Commands that download and run a package in one step.
@@ -65,9 +68,11 @@ PACKAGE_FLAGS = {"-p", "--package", "--from"}
 VALUE_FLAGS = {"--with", "--python", "--index-url"}
 
 # Exact versions: "pkg@1.2.3" or "@scope/pkg@1.2.3" (npm style, optional
-# pre-release like "-beta.1"), or "pkg==1.2.3" (Python style).
+# pre-release like "-beta.1"), or "pkg==1.2.3" (Python style, with the
+# optional pre-release, post-release and dev parts Python versions allow,
+# e.g. "0.1.0a4", "0.1.0rc2", "1.0.post1", "3.0.0.dev1").
 NPM_PINNED = re.compile(r"(@[^/@\s]+/)?[^@\s]+@\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?")
-PYTHON_PINNED = re.compile(r"[^=\s]+==\d+(\.\d+)*")
+PYTHON_PINNED = re.compile(r"[^=\s]+==\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?")
 
 # Hosts on the same machine, where plain HTTP never crosses the network.
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
@@ -218,6 +223,10 @@ def insecure_remote_server(agent: Agent) -> list[Finding]:
                     recommendation="Use https:// so traffic and credentials are encrypted.",
                 )
             )
+        # The registry does not record auth details, so a missing header there
+        # means "does not say", not "no authentication".
+        if agent.platform == "mcp_registry":
+            continue
         # Header names are case-insensitive in HTTP.
         if not any(name.lower() == "authorization" for name in server.headers):
             findings.append(

@@ -15,13 +15,22 @@ from discover_lite.checks import (
     secret_in_config,
     unpinned_package,
 )
-from discover_lite.connectors import load_any
+from discover_lite.connectors import load_agents
 from discover_lite.models import Agent, McpServer
 
 
 def percent(part: int, whole: int) -> str:
-    """"3 of 12" as "25.0%", or "-" when there is nothing to divide by."""
-    return f"{100 * part / whole:.1f}%" if whole else "-"
+    """"3 of 12" as "25.0%", or "-" when there is nothing to divide by.
+
+    A share that is above zero but rounds to 0.0% is shown as "<0.1%", so a
+    small number is not mistaken for none.
+    """
+    if not whole:
+        return "-"
+    share = 100 * part / whole
+    if 0 < share < 0.05:
+        return "<0.1%"
+    return f"{share:.1f}%"
 
 
 def _single(agent: Agent, server: McpServer) -> Agent:
@@ -34,11 +43,10 @@ def collect(folder: Path) -> tuple[list[Agent], int]:
     """Parse every .json file; return the agents and the number of files skipped."""
     agents, skipped = [], 0
     for path in sorted(folder.rglob("*.json")):
-        agent = load_any(path)
-        if agent is None:
+        found = load_agents(path)
+        if not found:
             skipped += 1
-        else:
-            agents.append(agent)
+        agents.extend(found)
     return agents, skipped
 
 
@@ -62,11 +70,9 @@ def compute(agents: list[Agent], skipped: int) -> list[tuple[str, int, str]]:
     secret_configs = sum(bool(secret_in_config(a)) for a in agents)
     any_finding = sum(bool(run_all(a)) for a in agents)
 
-    n_files = len(agents) + skipped
     return [
-        ("Files read", n_files, ""),
-        ("Files not recognised or not valid JSON", skipped, percent(skipped, n_files)),
-        ("Configs parsed", len(agents), percent(len(agents), n_files)),
+        ("Files with no current agents (unrecognised, invalid, or only old registry versions)", skipped, ""),
+        ("Configs parsed", len(agents), ""),
         ("Configs with at least one finding", any_finding, percent(any_finding, len(agents))),
         ("Configs with a hard-coded secret", secret_configs, percent(secret_configs, len(agents))),
         ("Servers", len(servers), ""),
@@ -108,3 +114,37 @@ def findings_by_check(agents: list[Agent]) -> list[tuple[str, str, int, int, str
          percent(configs[(check, severity)], len(agents)))
         for check, severity in rows
     ]
+
+
+def registry_rows(agents: list[Agent]) -> list[tuple[str, int, str]]:
+    """Extra rows for MCP Registry entries; empty if there are none."""
+    entries = [a for a in agents if a.platform == "mcp_registry"]
+    if not entries:
+        return []
+    n = len(entries)
+    with_package = [a for a in entries if any(s.command is not None for s in a.servers)]
+    with_remote = [a for a in entries if any(s.url is not None for s in a.servers)]
+    # Compare by id: checking "a in with_remote" would compare whole models
+    # against every entry in the list, which is very slow on 45,000 servers.
+    remote_ids = {a.id for a in with_remote}
+    both = [a for a in with_package if a.id in remote_ids]
+    unpinned = [a for a in entries if unpinned_package(a)]
+    plain_http = [
+        a for a in entries if any(f.severity == "high" for f in insecure_remote_server(a))
+    ]
+    declares_secret = [a for a in entries if any(s.declared_secrets for s in a.servers)]
+    packages = [s for a in entries for s in a.servers if s.command is not None]
+
+    rows = [
+        ("Registry servers (latest version of each)", n, ""),
+        ("Servers with a package (stdio)", len(with_package), percent(len(with_package), n)),
+        ("Servers with a remote endpoint", len(with_remote), percent(len(with_remote), n)),
+        ("Servers with both", len(both), percent(len(both), n)),
+        ("Servers with an unpinned package", len(unpinned), percent(len(unpinned), n)),
+        ("Servers with a plain-HTTP remote (non-local)", len(plain_http), percent(len(plain_http), n)),
+        ("Servers declaring a secret environment variable", len(declares_secret), percent(len(declares_secret), n)),
+        ("Packages", len(packages), ""),
+    ]
+    for registry_type, count in Counter(s.registry_type for s in packages).most_common():
+        rows.append((f"Packages from {registry_type}", count, percent(count, len(packages))))
+    return rows

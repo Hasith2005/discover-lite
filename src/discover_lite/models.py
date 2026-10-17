@@ -25,6 +25,7 @@ class McpServer(BaseModel):
     """One MCP server entry in a client config.
 
     Local servers use command, args and env. Remote servers use url and headers.
+    The last two fields are only filled in for MCP Registry entries.
     """
 
     name: str
@@ -33,6 +34,12 @@ class McpServer(BaseModel):
     env: dict[str, str] = {}
     url: str | None = None
     headers: dict[str, str] = {}
+    # Package registry the server comes from, e.g. "npm" or "pypi".
+    registry_type: str | None = None
+    # Names of environment variables the server declares as secret. Declaring
+    # a secret is the right way to ask for one, so this is never a finding;
+    # it is recorded for statistics only.
+    declared_secrets: list[str] = []
 
 
 class Agent(BaseModel):
@@ -40,7 +47,7 @@ class Agent(BaseModel):
 
     id: str
     name: str
-    platform: Literal["mcp_client", "copilot_studio"]
+    platform: Literal["mcp_client", "copilot_studio", "mcp_registry"]
     source_file: str
     instructions: str | None = None
     tools: list[Tool] = []

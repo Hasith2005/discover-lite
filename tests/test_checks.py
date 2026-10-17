@@ -84,6 +84,9 @@ def test_secret_in_config_fires(fields):
         {"headers": {"Authorization": "Bearer ${TICKETS_TOKEN}"}},
         {"env": {"LOG_LEVEL": "debug"}},
         {"env": {"API_KEY": ""}},
+        # "sk-" inside a word is not a key (real registry package names).
+        {"args": ["@ellul-estate/breakerdesk-com-breakerdesk-electrician-tools-mcp"]},
+        {"args": ["https://example.com/v0.3.0/task-graph-mcp-x86_64-unknown-linux-gnu.mcpb"]},
         # A plain word in args is not a key, even after "--token".
         {"args": ["-y", "some-package", "--token", "short"]},
         # Other reference styles.
@@ -163,6 +166,12 @@ def test_unpinned_package_fires(command, args):
         ("npx", ["-y", "@scope/some-package@1.2.3"]),
         ("npx", ["some-package@2.0.0-beta.1"]),
         ("uvx", ["mcp-server-git==1.2.3"]),
+        # Python pre-release, post-release and dev versions are still exact.
+        ("uvx", ["some-server==0.1.0a4"]),
+        ("uvx", ["some-server==0.1.0rc2"]),
+        ("uvx", ["some-server==1.0.post1"]),
+        ("uvx", ["some-server==3.0.0.dev1"]),
+        ("uvx", ["some-server==2026.10.12.1"]),
         # The package comes from the flag, not the command after it.
         ("npx", ["--package=some-package@1.2.3", "some-command"]),
         ("npx", ["-p", "some-package@1.2.3", "some-command"]),
@@ -334,7 +343,7 @@ def test_stats_on_fixtures():
 
     agents, skipped = stats.collect(FIXTURES)
     rows = {label: (count, share) for label, count, share in stats.compute(agents, skipped)}
-    assert rows["Configs parsed"] == (2, "100.0%")
+    assert rows["Configs parsed"] == (2, "")
     assert rows["Servers"][0] == 4
     # postgres is unpinned, filesystem is pinned.
     assert rows["Package-runner servers with no exact version"] == (1, "50.0%")
@@ -360,3 +369,13 @@ def test_findings_by_check_on_fixtures():
     assert rows[("open_access", "high")] == (1, 1)
     assert rows[("open_access", "medium")] == (1, 1)
     assert rows[("secret_in_config", "high")] == (1, 1)
+
+
+@pytest.mark.parametrize(
+    "part, whole, expected",
+    [(3, 12, "25.0%"), (0, 12, "0.0%"), (1, 45372, "<0.1%"), (1, 0, "-")],
+)
+def test_percent(part, whole, expected):
+    from discover_lite.stats import percent
+
+    assert percent(part, whole) == expected
