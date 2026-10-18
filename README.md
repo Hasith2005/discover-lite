@@ -19,10 +19,14 @@ python -m venv .venv
 Real public data (the only commands that use the network):
 
 ```bash
-.venv/bin/discover-lite fetch-registry            # official MCP Registry, saved to data/registry/
-.venv/bin/discover-lite fetch-github --limit 600  # public client configs (needs `gh auth login`)
+.venv/bin/discover-lite fetch-registry              # the whole official MCP Registry, saved to data/registry/
+.venv/bin/discover-lite fetch-registry --limit 500  # only the first 500 entries
+.venv/bin/discover-lite fetch-github --limit 600    # public client configs (needs `gh auth login`)
+.venv/bin/discover-lite stats data/registry/
 .venv/bin/discover-lite stats data/github-configs/
 ```
+
+`--limit` sets how many items to download: for `fetch-registry`, entries (one per server version, default 0 = the whole registry, about 45,000 servers at 100 a page); for `fetch-github`, new config files (default 300, split evenly across the six clients). `--out` changes the folder.
 
 ## How it fits together
 

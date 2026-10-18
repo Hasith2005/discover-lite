@@ -170,7 +170,9 @@ def review_secrets_command(
 
 @app.command("fetch-registry")
 def fetch_registry_command(
-    limit: int = typer.Option(0, help="Stop after this many entries (0 = fetch everything)."),
+    limit: int = typer.Option(
+        0, min=0, help="How many entries to fetch, one per server version (0 = the whole registry)."
+    ),
     out: Path = typer.Option(Path("data/registry"), help="Folder to save pages in."),
 ) -> None:
     """Download server definitions from the official MCP Registry."""

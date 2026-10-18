@@ -18,9 +18,9 @@ USER_AGENT = "discover-lite (research project)"
 PAUSE_SECONDS = 1  # Be polite: one request at a time, with a short pause.
 
 
-def fetch_page(cursor: str | None) -> bytes:
-    """One page of the registry, as the raw bytes the API returned."""
-    params = {"limit": PAGE_SIZE}
+def fetch_page(cursor: str | None, size: int = PAGE_SIZE) -> bytes:
+    """One page of up to `size` entries, as the raw bytes the API returned."""
+    params = {"limit": size}
     if cursor:
         params["cursor"] = cursor
     url = f"{API_URL}?{urllib.parse.urlencode(params)}"
@@ -30,11 +30,13 @@ def fetch_page(cursor: str | None) -> bytes:
 
 
 def fetch(out_dir: Path, limit: int, echo=print) -> int:
-    """Save pages until there is no next cursor, or `limit` entries (0 = no limit)."""
+    """Save pages until there is no next cursor, or exactly `limit` entries (0 = no limit)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     cursor, entries, page = None, 0, 0
     while True:
-        raw = fetch_page(cursor)
+        # Ask only for what is still needed, so the last page is not overfilled.
+        size = min(PAGE_SIZE, limit - entries) if limit else PAGE_SIZE
+        raw = fetch_page(cursor, size)
         page += 1
         # Saved exactly as received, so the data can be checked later.
         (out_dir / f"page-{page:04d}.json").write_bytes(raw)
