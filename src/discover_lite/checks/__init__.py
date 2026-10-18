@@ -9,6 +9,9 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 from discover_lite.models import Agent, Finding
 
 # A reference to a value stored elsewhere, which is the safe way to pass a
@@ -78,6 +81,15 @@ PYTHON_PINNED = re.compile(r"[^=\s]+==\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.de
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
 MIN_INSTRUCTION_WORDS = 10
+
+# Two topics whose trigger phrases are at least this similar (cosine similarity
+# of their TF-IDF vectors, 0 to 1) are flagged. Tuned on the fixtures and a
+# few hand-made pairs: with English stop words removed, clearly different
+# topics scored 0.00 and overlapping ones 0.17 to 0.55.
+TOPIC_OVERLAP_THRESHOLD = 0.15
+
+# How many shared words to name in the evidence.
+MAX_SHARED_WORDS = 5
 
 
 def redact(value: str) -> str:
@@ -349,6 +361,52 @@ def prompt_injection_exposure(agent: Agent) -> list[Finding]:
     ]
 
 
+def topic_overlap(agent: Agent) -> list[Finding]:
+    """Two topics with similar trigger phrases, so the agent may pick the wrong one.
+
+    Copilot Studio calls this "Multiple Topics Matched". Each topic's phrases
+    are joined into one text, turned into a TF-IDF vector (words weighted by
+    how rare they are across this agent's topics) and compared pairwise.
+    """
+    if len(agent.topics) < 2:
+        return []
+    names = list(agent.topics)
+    texts = [" ".join(agent.topics[name]) for name in names]
+    # Stop words like "my" and "I" would otherwise make unrelated topics look alike.
+    vectorizer = TfidfVectorizer(stop_words="english")
+    try:
+        vectors = vectorizer.fit_transform(texts)
+    except ValueError:
+        return []  # No usable words at all, e.g. every phrase is empty.
+    similarity = cosine_similarity(vectors)
+    words = vectorizer.get_feature_names_out()
+
+    findings = []
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            score = similarity[i, j]
+            if score < TOPIC_OVERLAP_THRESHOLD:
+                continue
+            # A word's share of the score is its weight in one topic times its
+            # weight in the other; words missing from either topic give 0.
+            contribution = vectors[i].multiply(vectors[j]).toarray()[0]
+            top = contribution.argsort()[::-1][:MAX_SHARED_WORDS]
+            shared = [words[k] for k in top if contribution[k] > 0]
+            findings.append(
+                Finding(
+                    check_id="topic_overlap",
+                    agent_id=agent.id,
+                    severity="medium",
+                    evidence=(
+                        f"Topics '{names[i]}' and '{names[j]}' have similar trigger phrases "
+                        f"(similarity {score:.2f}); shared words: {', '.join(shared)}"
+                    ),
+                    recommendation="Make the trigger phrases distinct, or merge the topics into one.",
+                )
+            )
+    return findings
+
+
 ALL_CHECKS = [
     secret_in_config,
     unpinned_package,
@@ -358,6 +416,7 @@ ALL_CHECKS = [
     open_access,
     unclassified_tool,
     prompt_injection_exposure,
+    topic_overlap,
 ]
 
 

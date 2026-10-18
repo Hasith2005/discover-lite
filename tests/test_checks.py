@@ -14,6 +14,7 @@ from discover_lite.checks import (
     redact,
     run_all,
     secret_in_config,
+    topic_overlap,
     unclassified_tool,
     unpinned_package,
 )
@@ -348,6 +349,52 @@ def test_prompt_injection_exposure_fires(capability):
 )
 def test_prompt_injection_exposure_does_not_fire(fields):
     assert prompt_injection_exposure(copilot_agent(**fields)) == []
+
+
+# --- topic_overlap ----------------------------------------------------------
+
+
+def test_topic_overlap_fires_for_hr_helper():
+    agent = load_any(FIXTURES / "copilot_hr_helper.json")
+    [finding] = topic_overlap(agent)
+    assert finding.severity == "medium"
+    assert "'reset_password' and 'unlock_account'" in finding.evidence
+    assert "similarity 0.17" in finding.evidence
+    # The word that drove the score is named; stop words like "my" are not.
+    assert finding.evidence.endswith("shared words: password")
+
+
+def test_topic_overlap_lists_shared_words_strongest_first():
+    topics = {
+        "track_order": ["track my order", "where is my order", "order status"],
+        "cancel_order": ["cancel my order", "stop my order", "I want to cancel an order"],
+    }
+    [finding] = topic_overlap(copilot_agent(topics=topics))
+    assert finding.evidence.endswith("shared words: order")
+
+
+@pytest.mark.parametrize(
+    "topics",
+    [
+        # Clearly different topics.
+        {
+            "book_leave": ["book annual leave", "request time off"],
+            "reset_password": ["reset my password", "I forgot my password"],
+        },
+        # Only stop words in common ("my"), which must not count.
+        {
+            "payslip": ["show my payslip", "when is payday"],
+            "laptop": ["my laptop is broken", "request a new laptop"],
+        },
+        # Fewer than two topics: nothing to compare.
+        {"reset_password": ["reset my password"]},
+        {},
+        # No usable words at all.
+        {"a": [], "b": ["the"]},
+    ],
+)
+def test_topic_overlap_does_not_fire(topics):
+    assert topic_overlap(copilot_agent(topics=topics)) == []
 
 
 # --- end to end -------------------------------------------------------------
