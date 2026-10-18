@@ -1,0 +1,99 @@
+# Links each check to recognised security frameworks.
+#
+# owasp_llm_2026: OWASP Top 10 for LLM Applications, 2026 edition (LLM01 Prompt
+#   Injection, LLM02 Sensitive Information Disclosure, LLM03 Excessive Agency,
+#   LLM04 Supply Chain, ...). Empty when there is no clean match.
+# atlas: MITRE ATLAS techniques the finding makes easier for an attacker,
+#   checked against ATLAS release 2026.09 (github.com/mitre-atlas/atlas-data).
+#   Quality findings have none: they describe unreliable behaviour, not an attack.
+# nist_ai_rmf: NIST AI Risk Management Framework functions (Govern, Map,
+#   Measure, Manage) that the finding feeds into.
+# category: "security", or "quality" for findings with no clean OWASP match.
+
+secret_in_config:
+  title: Secret written into a config file
+  category: security
+  owasp_llm_2026: [LLM02]
+  atlas: [AML.T0083, AML.T0055]  # Credentials from AI Agent Configuration; Unsecured Credentials
+  nist_ai_rmf: [Measure, Manage]
+  why: Anyone who can read the file, or the repository it is committed to, can use the secret.
+
+unpinned_package:
+  title: Package with no exact version
+  category: security
+  owasp_llm_2026: [LLM04]
+  atlas: [AML.T0010.005, AML.T0109]  # AI Supply Chain Compromise: AI Agent Tool; AI Supply Chain Rug Pull
+  nist_ai_rmf: [Map, Manage]
+  why: A new or hijacked release of the package runs automatically the next time the agent starts.
+
+insecure_remote_server:
+  title: Remote server over plain HTTP or without authentication
+  category: security
+  owasp_llm_2026: [LLM02]
+  atlas: [AML.T0132]  # Misconfigured or Publicly Exposed AI Services (ATLAS has no network-interception technique)
+  nist_ai_rmf: [Measure, Manage]
+  why: Traffic and credentials can be read or changed on the network, or the server may accept anyone.
+
+missing_scope:
+  title: Instructions too short to limit the agent
+  category: security
+  owasp_llm_2026: [LLM03]
+  atlas: [AML.T0051.000, AML.T0054]  # LLM Prompt Injection: Direct; LLM Jailbreak
+  nist_ai_rmf: [Govern, Map]
+  why: Without stated limits, nothing tells the agent what it must refuse.
+
+no_human_in_loop:
+  title: Action tool runs without approval
+  category: security
+  owasp_llm_2026: [LLM03]
+  atlas: [AML.T0053, AML.T0086, AML.T0101]  # AI Agent Tool Invocation; Exfiltration and Data Destruction via it
+  nist_ai_rmf: [Govern, Manage]
+  why: The agent can change data or send messages with no person checking first.
+
+open_access:
+  title: Agent open to anyone or to the whole organisation
+  category: security
+  owasp_llm_2026: [LLM02]
+  atlas: [AML.T0132]  # Misconfigured or Publicly Exposed AI Services
+  nist_ai_rmf: [Govern, Manage]
+  why: More people can reach the agent and the data behind it than need to.
+
+unclassified_tool:
+  title: Tool we could not classify, running without approval
+  category: quality
+  owasp_llm_2026: []
+  atlas: []
+  nist_ai_rmf: [Map]
+  why: We cannot tell whether the tool changes anything, so a person needs to check what it does.
+
+prompt_injection_exposure:
+  title: Reads untrusted content and can take actions
+  category: security
+  owasp_llm_2026: [LLM01]
+  atlas: [AML.T0051.001, AML.T0053]  # LLM Prompt Injection: Indirect; AI Agent Tool Invocation
+  nist_ai_rmf: [Map, Manage]
+  why: Hidden instructions in web content can make the agent act for an attacker.
+
+topic_overlap:
+  title: Topics with overlapping trigger phrases
+  category: quality
+  owasp_llm_2026: []
+  atlas: []
+  nist_ai_rmf: [Measure]
+  why: The agent may run the wrong topic, which makes its behaviour unreliable.
+
+broad_filesystem_access:
+  title: Filesystem server given a whole disk or home folder
+  category: security
+  owasp_llm_2026: [LLM03]
+  atlas: [AML.T0037, AML.T0112.000]  # Data from Local System; Machine Compromise: Local AI Agent
+  nist_ai_rmf: [Map, Manage]
+  why: The agent can read and change far more files than its task needs, including keys and credentials.
+
+no_guardrail:
+  title: No guardrail screening inputs and outputs
+  category: security
+  owasp_llm_2026: [LLM01, LLM02]
+  atlas: [AML.T0051, AML.T0054, AML.T0057]  # LLM Prompt Injection; LLM Jailbreak; LLM Data Leakage
+  nist_ai_rmf: [Manage]
+  why: Nothing filters prompt attacks on the way in or sensitive data on the way out.

@@ -21,7 +21,7 @@ def test_mcp_config_fixture():
                 name="postgres",
                 command="npx",
                 args=["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/app"],
-                env={"DB_PASSWORD": "FAKE_DB_PASSWORD_FOR_TESTS"},
+                env={"DB_PASSWORD": "FAKE_DB_PASSWORD_7f3a9c2e81b4"},
             ),
             McpServer(
                 name="filesystem",
@@ -128,3 +128,78 @@ def test_load_any_returns_none_for_unrecognised(tmp_path, content):
 )
 def test_classify(operation_id, method, expected):
     assert classify(operation_id, method) == expected
+
+
+def test_vscode_servers_format():
+    agent = load_any(FIXTURES / "vscode" / "mcp.json")
+    assert agent.platform == "mcp_client"
+    assert [s.name for s in agent.servers] == ["filesystem", "git", "notion"]
+    # The secret comes from a VS Code input, so the value is a reference.
+    assert agent.servers[2].env == {"NOTION_TOKEN": "${input:notion_key}"}
+
+
+def test_servers_key_that_is_not_a_client_config_is_ignored(tmp_path):
+    # A "servers" mapping whose entries have no command or url is something else.
+    path = tmp_path / "game.json"
+    path.write_text('{"servers": {"eu-1": {"region": "eu", "players": 64}}}')
+    assert load_any(path) is None
+
+
+def test_bedrock_agent_fixture():
+    agent = load_any(FIXTURES / "bedrock_travel_agent.json")
+    assert agent.platform == "bedrock_agent"
+    assert agent.name == "Travel Booker"
+    assert agent.guardrail is False
+    tools = {t.name: (t.capability, t.requires_approval) for t in agent.tools}
+    assert tools == {
+        "search_flights": ("read", None),
+        # "book" is in neither word list, so it stays unknown.
+        "book_flight": ("unknown", True),
+        "cancel_booking": ("write", False),
+        # From the inline OpenAPI schema: the HTTP method decides.
+        "searchHotels": ("read", None),
+        "reserveHotel": ("write", None),
+        "CodeInterpreter": ("execute", None),
+    }
+    # The disabled action group adds no tools.
+    assert "delete_expense" not in tools
+
+
+def test_bedrock_guardrail_present():
+    agent = load_any(FIXTURES / "bedrock_claims_agent.json")
+    assert agent.guardrail is True
+    # Access is governed by IAM, which GetAgent does not show.
+    assert agent.authentication is None and agent.shared_org_wide is None
+
+
+def _parse(tmp_path, config: dict):
+    import json
+
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    return load_any(path)
+
+
+def test_windsurf_server_url(tmp_path):
+    agent = _parse(tmp_path, {"mcpServers": {"remote": {"serverUrl": "http://mcp.example.com/sse"}}})
+    assert agent.servers[0].url == "http://mcp.example.com/sse"
+
+
+def test_cmd_wrapper_is_unwrapped(tmp_path):
+    agent = _parse(tmp_path, {"mcpServers": {"s": {"command": "cmd", "args": ["/c", "npx", "-y", "pkg"]}}})
+    assert (agent.servers[0].command, agent.servers[0].args) == ("npx", ["-y", "pkg"])
+
+
+def test_cmd_shell_line_is_left_alone(tmp_path):
+    args = ["/c", "cd app && python server.py"]
+    agent = _parse(tmp_path, {"mcpServers": {"s": {"command": "cmd", "args": args}}})
+    assert (agent.servers[0].command, agent.servers[0].args) == ("cmd", args)
+
+
+def test_cline_always_allow_becomes_unapproved_tools(tmp_path):
+    entry = {"command": "npx", "args": ["pkg@1.0.0"], "alwaysAllow": ["read_file", "write_file", 7]}
+    agent = _parse(tmp_path, {"mcpServers": {"fs": entry}})
+    assert agent.tools == [
+        Tool(name="read_file", capability="read", requires_approval=False),
+        Tool(name="write_file", capability="write", requires_approval=False),
+    ]

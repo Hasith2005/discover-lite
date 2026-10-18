@@ -1,0 +1,36 @@
+{
+  "agent": {
+    "agentId": "CLAIMS0001",
+    "agentName": "Claims Helper",
+    "agentArn": "arn:aws:bedrock:eu-west-2:111122223333:agent/CLAIMS0001",
+    "agentStatus": "PREPARED",
+    "foundationModel": "anthropic.claude-sonnet-4-5",
+    "instruction": "You help policy holders submit insurance claims and check their progress. Only discuss the signed-in customer's own policies, and never give legal or medical advice.",
+    "guardrailConfiguration": {
+      "guardrailIdentifier": "gr-claims-01",
+      "guardrailVersion": "1"
+    }
+  },
+  "actionGroups": [
+    {
+      "actionGroupName": "claims",
+      "actionGroupState": "ENABLED",
+      "actionGroupExecutor": {
+        "lambda": "arn:aws:lambda:eu-west-2:111122223333:function:claims"
+      },
+      "functionSchema": {
+        "functions": [
+          {
+            "name": "get_claim_status",
+            "description": "Status of a claim."
+          },
+          {
+            "name": "submit_claim",
+            "description": "Submit a new claim.",
+            "requireConfirmation": "ENABLED"
+          }
+        ]
+      }
+    }
+  ]
+}

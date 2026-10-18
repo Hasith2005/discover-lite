@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/app"],
       "env": {
-        "DB_PASSWORD": "FAKE_DB_PASSWORD_FOR_TESTS"
+        "DB_PASSWORD": "FAKE_DB_PASSWORD_7f3a9c2e81b4"
       }
     },
     "filesystem": {

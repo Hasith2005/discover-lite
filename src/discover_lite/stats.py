@@ -39,6 +39,10 @@ def _single(agent: Agent, server: McpServer) -> Agent:
     return agent.model_copy(update={"servers": [server]})
 
 
+def _has_high(findings: list) -> bool:
+    return any(f.severity == "high" for f in findings)
+
+
 def collect(folder: Path) -> tuple[list[Agent], int]:
     """Parse every .json file; return the agents and the number of files skipped."""
     agents, skipped = [], 0
@@ -66,8 +70,13 @@ def compute(agents: list[Agent], skipped: int) -> list[tuple[str, int, str]]:
     no_auth = sum(
         any(f.severity == "low" for f in insecure_remote_server(_single(a, s))) for a, s in remote
     )
-    secret_servers = sum(bool(secret_in_config(_single(a, s))) for a, s in servers)
-    secret_configs = sum(bool(secret_in_config(a)) for a in agents)
+    # Only high findings count as a hard-coded secret. Low ones are text a
+    # person typed (a password or a placeholder) and are counted separately.
+    secret_servers = sum(_has_high(secret_in_config(_single(a, s))) for a, s in servers)
+    secret_configs = sum(_has_high(secret_in_config(a)) for a in agents)
+    typed_configs = sum(
+        not _has_high(found) and bool(found) for found in (secret_in_config(a) for a in agents)
+    )
     any_finding = sum(bool(run_all(a)) for a in agents)
 
     return [
@@ -75,6 +84,7 @@ def compute(agents: list[Agent], skipped: int) -> list[tuple[str, int, str]]:
         ("Configs parsed", len(agents), ""),
         ("Configs with at least one finding", any_finding, percent(any_finding, len(agents))),
         ("Configs with a hard-coded secret", secret_configs, percent(secret_configs, len(agents))),
+        ("Configs with only typed values under secret names (password or placeholder)", typed_configs, percent(typed_configs, len(agents))),
         ("Servers", len(servers), ""),
         ("Local servers (command)", len(local), percent(len(local), len(servers))),
         ("Remote servers (url)", len(remote), percent(len(remote), len(servers))),

@@ -12,4 +12,4 @@ dist/
 
 # Downloaded data and generated reports
 data/
-report.html
+/report.html

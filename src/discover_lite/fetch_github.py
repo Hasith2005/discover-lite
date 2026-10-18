@@ -16,8 +16,20 @@ import time
 from datetime import date
 from pathlib import Path
 
-# The two config file names Claude Desktop and Claude Code read.
-FILENAMES = [".mcp.json", "claude_desktop_config.json"]
+# One search per MCP client: (client, file name, search words). VS Code's
+# mcp.json uses a "servers" key; the others use "mcpServers".
+SEARCHES = [
+    ("Claude Code", ".mcp.json", "mcpServers"),
+    ("Claude Desktop", "claude_desktop_config.json", "mcpServers"),
+    ("Cursor", "mcp.json", "mcpServers path:.cursor"),
+    ("VS Code", "mcp.json", "servers path:.vscode"),
+    ("Windsurf", "mcp_config.json", "mcpServers"),
+    ("Cline", "cline_mcp_settings.json", "mcpServers"),
+]
+
+# Code search returns at most 1,000 results per query. Splitting each search
+# by file size (in bytes) gives separate queries, each with its own 1,000.
+SIZE_RANGES = ["<300", "300..600", "600..1000", "1000..2000", ">2000"]
 
 # Paths that look like documentation rather than a config someone uses.
 EXAMPLE_PATH = re.compile(r"example|sample|template|demo|docs?/|tests?/|fixtures?/", re.IGNORECASE)
@@ -41,11 +53,11 @@ def gh_api(*args: str) -> dict:
     return json.loads(result.stdout)
 
 
-def search_page(filename: str, page: int) -> list[dict]:
-    """One page (up to 100 results) of code search for one file name."""
+def search_page(words: str, filename: str, size: str, page: int) -> list[dict]:
+    """One page (up to 100 results) of code search for one file name and size range."""
     args = (
         "-X", "GET", "search/code",
-        "-f", f"q=mcpServers filename:{filename}",
+        "-f", f"q={words} filename:{filename} size:{size}",
         "-f", "per_page=100",
         "-f", f"page={page}",
     )
@@ -71,69 +83,76 @@ def is_wanted(item: dict, filename: str) -> bool:
 
 
 def fetch(out_dir: Path, limit: int, echo=print) -> int:
-    """Download up to `limit` configs, split evenly across FILENAMES.
+    """Download up to `limit` new configs, split evenly across SEARCHES.
 
     Files are saved as <blob sha>.json. A git blob id is a hash of the file's
     contents, so identical copies (forks, copied templates) share one id and
-    are saved only once. Repository names are not stored anywhere.
+    are saved only once, and files from an earlier run are not fetched again.
+    Repository names are not stored anywhere.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    per_filename = limit // len(FILENAMES)
+    per_search = limit // len(SEARCHES)
     counts = {}
 
-    for filename in FILENAMES:
+    for client, filename, words in SEARCHES:
         saved = skipped = duplicates = 0
-        # Search returns at most 1,000 results: 10 pages of 100.
-        for page in range(1, 11):
-            if saved >= per_filename:
-                break
-            items = search_page(filename, page)
-            time.sleep(SEARCH_PAUSE_SECONDS)
-            if not items:
-                break
-            for item in items:
-                if saved >= per_filename:
+        for size in SIZE_RANGES:
+            # 10 pages of 100 is the most one query returns.
+            for page in range(1, 11):
+                if saved >= per_search:
                     break
-                sha = item["sha"]
-                if not is_wanted(item, filename) or not BLOB_SHA.fullmatch(sha):
-                    skipped += 1
-                    continue
-                target = out_dir / f"{sha}.json"
-                if target.exists():
-                    duplicates += 1
-                    continue
-                try:
-                    content = download_blob(item["repository"]["full_name"], sha)
-                except subprocess.CalledProcessError:
-                    skipped += 1  # Deleted or private since it was indexed.
-                    continue
-                finally:
-                    time.sleep(DOWNLOAD_PAUSE_SECONDS)
-                if len(content) > MAX_FILE_BYTES:
-                    skipped += 1
-                    continue
-                target.write_bytes(content)
-                saved += 1
-            echo(f"{filename}: page {page}, {saved} saved so far")
-        counts[filename] = {"saved": saved, "skipped": skipped, "duplicates": duplicates}
+                items = search_page(words, filename, size, page)
+                time.sleep(SEARCH_PAUSE_SECONDS)
+                if not items:
+                    break
+                for item in items:
+                    if saved >= per_search:
+                        break
+                    sha = item["sha"]
+                    if not is_wanted(item, filename) or not BLOB_SHA.fullmatch(sha):
+                        skipped += 1
+                        continue
+                    target = out_dir / f"{sha}.json"
+                    if target.exists():
+                        duplicates += 1
+                        continue
+                    try:
+                        content = download_blob(item["repository"]["full_name"], sha)
+                    except subprocess.CalledProcessError:
+                        skipped += 1  # Deleted or private since it was indexed.
+                        continue
+                    finally:
+                        time.sleep(DOWNLOAD_PAUSE_SECONDS)
+                    if len(content) > MAX_FILE_BYTES:
+                        skipped += 1
+                        continue
+                    target.write_bytes(content)
+                    saved += 1
+                echo(f"{client} ({filename}, size {size}): page {page}, {saved} saved so far")
+        counts[client] = {"filename": filename, "saved": saved, "skipped": skipped, "duplicates": duplicates}
 
     write_record(out_dir, counts)
     return sum(c["saved"] for c in counts.values())
 
 
 def write_record(out_dir: Path, counts: dict) -> None:
-    """Record what was fetched, when, and how, in FETCHED.md."""
+    """Add a record of this run (when, how, how many) to FETCHED.md."""
+    total = len(list(out_dir.glob("*.json")))
     lines = [
-        "# GitHub MCP config sample",
         "",
-        f"Fetched: {date.today().isoformat()}",
-        "Source: GitHub code search API (`search/code`), query `mcpServers filename:<name>`, best-match order.",
+        f"## Run on {date.today().isoformat()}",
+        "",
+        "Source: GitHub code search API (`search/code`), one query per client and file-size range, best-match order.",
         "Kept: exact file names only; paths matching example, sample, template, demo, docs, tests or fixtures skipped.",
-        "Duplicates: files are named by git blob id, so identical contents are saved once.",
+        "Duplicates: files are named by git blob id, so identical contents (and files from earlier runs) are saved once.",
         "",
-        "| File name | Saved | Skipped | Duplicates |",
-        "|---|---|---|---|",
+        "| Client | File name | Saved | Skipped | Duplicates |",
+        "|---|---|---|---|---|",
     ]
-    for filename, c in counts.items():
-        lines.append(f"| {filename} | {c['saved']} | {c['skipped']} | {c['duplicates']} |")
-    (out_dir / "FETCHED.md").write_text("\n".join(lines) + "\n")
+    for client, c in counts.items():
+        lines.append(f"| {client} | {c['filename']} | {c['saved']} | {c['skipped']} | {c['duplicates']} |")
+    lines += ["", f"Files in the folder after this run: {total}"]
+    record = out_dir / "FETCHED.md"
+    # Keep earlier runs' records; start the file with a title the first time.
+    previous = record.read_text() if record.exists() else "# GitHub MCP config sample\n"
+    record.write_text(previous + "\n".join(lines) + "\n")

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discover Lite report</title>
+<style>
+  :root {
+    --text: #1f2328; --muted: #59636e; --line: #d8dee4; --panel: #f6f8fa; --bg: #ffffff;
+    --high: #b42318; --medium: #b54708; --low: #475467; --ok: #067647;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --text: #e6edf3; --muted: #9198a1; --line: #30363d; --panel: #161b22; --bg: #0d1117;
+      --high: #ff7b72; --medium: #e3b341; --low: #9198a1; --ok: #3fb950;
+    }
+  }
+  body { background: var(--bg); color: var(--text); margin: 0; font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 24px 0 6px; }
+  p, li { max-width: 72ch; }
+  .muted { color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .tile b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; background: var(--panel); }
+  td.num, th.num { text-align: right; }
+  .sev { font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: .03em; }
+  .high { color: var(--high); } .medium { color: var(--medium); } .low { color: var(--low); } .ok { color: var(--ok); }
+  .agent { border: 1px solid var(--line); border-radius: 8px; padding: 4px 16px 12px; margin: 16px 0; break-inside: avoid; }
+  .bar { display: inline-block; height: 8px; background: var(--muted); border-radius: 2px; vertical-align: middle; }
+  code { font-size: 13px; }
+  @media print { h2 { break-after: avoid; } .agent { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Discover Lite report</h1>
+<p class="muted">Scanned <code>{{ folder }}</code> on {{ today }}. Every finding comes from a fixed rule; no AI model was used.</p>
+
+<h2>Estate summary</h2>
+<div class="tiles">
+  <div class="tile"><b>{{ results|length }}</b>agents</div>
+  <div class="tile"><b>{{ agents_with_findings }}</b>with findings</div>
+  <div class="tile"><b class="high">{{ counts.high }}</b>high</div>
+  <div class="tile"><b class="medium">{{ counts.medium }}</b>medium</div>
+  <div class="tile"><b class="low">{{ counts.low }}</b>low</div>
+</div>
+<h3>Top issues across the organisation</h3>
+<ul>
+{% for issue in top_issues %}  <li>{{ issue }}</li>
+{% endfor %}</ul>
+
+<h2>Agents by risk score</h2>
+<p class="muted">Scores run from 0 to 100. Each failed check adds its weight, and reading untrusted content together with an unapproved action tool adds a bonus. The breakdown below each agent shows exactly which checks the points came from.</p>
+<div class="wrap"><table>
+  <tr><th>Agent</th><th>Platform</th><th class="num">Score</th><th class="num">Findings</th></tr>
+{% for r in results %}  <tr><td><a href="#agent-{{ loop.index }}">{{ r.agent.name }}</a></td><td>{{ r.agent.platform }}</td><td class="num">{{ "%.0f"|format(r.score) }}</td><td class="num">{{ r.findings|length }}</td></tr>
+{% endfor %}</table></div>
+
+<h2>Agent details</h2>
+{% for r in results %}
+<div class="agent" id="agent-{{ loop.index }}">
+  <h3>{{ r.agent.name }} <span class="muted">· {{ r.agent.platform }} · score {{ "%.0f"|format(r.score) }}</span></h3>
+  <p class="muted">Source: <code>{{ r.agent.source_file }}</code></p>
+  {% if not r.findings %}<p class="ok">No findings.</p>{% else %}
+  <p><b>Where the score comes from</b></p>
+  <div class="wrap"><table>
+    <tr><th>Check</th><th class="num">Points</th><th></th></tr>
+    {% for check, points in r.breakdown|dictsort(by="value", reverse=true) %}<tr><td>{{ check }}</td><td class="num">{{ "%.1f"|format(points) }}</td><td><span class="bar" style="width: {{ (points * 2)|round|int }}px"></span></td></tr>
+    {% endfor %}</table></div>
+  <p><b>Findings</b></p>
+  <div class="wrap"><table>
+    <tr><th>Severity</th><th>Finding</th><th>Frameworks</th></tr>
+    {% for f in r.findings %}{% set m = mappings[f.check_id] %}<tr>
+      <td class="sev {{ f.severity }}">{{ f.severity }}</td>
+      <td><b>{{ m.title }}</b><br>{{ f.evidence }}<br><span class="muted">Why it matters: {{ m.why }}</span><br>Fix: {{ f.recommendation }}</td>
+      <td>{% if m.owasp_llm_2026 %}OWASP {{ m.owasp_llm_2026|join(", ") }}{% else %}Quality finding{% endif %}<br><span class="muted">NIST AI RMF: {{ m.nist_ai_rmf|join(", ") }}{% if m.atlas %}<br>MITRE ATLAS: {{ m.atlas|join(", ") }}{% endif %}</span></td>
+    </tr>
+    {% endfor %}</table></div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<h2>Policy verification</h2>
+{% if verifications %}
+<p class="muted">The Z3 solver checks every possible tool call against each agent's written policy. A violation comes with a concrete example call. This proves properties of the policy as written, not of the agent, the model or the platform that enforces it.</p>
+{% for agent, checks in verifications %}
+<h3>{{ agent.name }}</h3>
+<div class="wrap"><table>
+  <tr><th>Property</th><th>Result</th><th>Detail</th></tr>
+  {% for c in checks %}<tr><td>{{ c.property }}</td><td class="sev {{ 'ok' if c.proved else 'high' }}">{{ "proved" if c.proved else "violated" }}</td><td>{{ c.detail }}</td></tr>
+  {% endfor %}</table></div>
+{% endfor %}
+{% else %}<p class="muted">No policy files were found.</p>{% endif %}
+
+<h2>What each platform tells us</h2>
+<p class="muted">On how many agents each security signal was present. A signal a platform never gives cannot be checked, so a blank row is a gap in visibility, not a clean result. The last row counts tools, not agents.</p>
+<div class="wrap"><table>
+  <tr><th>Signal</th>{% for p in platforms %}<th class="num">{{ p }}</th>{% endfor %}</tr>
+  {% for label, cells in coverage_rows %}<tr><td>{{ label }}</td>{% for c in cells %}<td class="num">{{ c }}</td>{% endfor %}</tr>
+  {% endfor %}</table></div>
+
+{% if real_world %}
+<h2>Real-world data</h2>
+<p class="muted">The same checks run over public data downloaded by the fetch commands. Only counts are shown: no file names, repository names or values.</p>
+{% for section in real_world %}
+<h3>{{ section.title }}{% if section.fetched %} <span class="muted">· fetched {{ section.fetched }}</span>{% endif %}</h3>
+<div class="wrap"><table>
+  <tr><th>Measure</th><th class="num">Count</th><th class="num">Share</th></tr>
+  {% for label, count, share in section.rows %}<tr><td>{{ label }}</td><td class="num">{{ "{:,}".format(count) }}</td><td class="num">{{ share }}</td></tr>
+  {% endfor %}</table></div>
+{% if section.checks %}
+<div class="wrap"><table>
+  <tr><th>Check</th><th>Severity</th><th class="num">Configs affected</th><th class="num">Share</th></tr>
+  {% for check, severity, n_findings, n_configs, share in section.checks %}<tr><td>{{ check }}</td><td class="sev {{ severity }}">{{ severity }}</td><td class="num">{{ "{:,}".format(n_configs) }}</td><td class="num">{{ share }}</td></tr>
+  {% endfor %}</table></div>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+<h2>What this tool does not do</h2>
+<ul>
+  <li>It reads configuration only. It never runs an agent, connects to a server or watches live traffic, so it cannot see what an agent actually does.</li>
+  <li>It cannot see what a platform does not export. Missing fields are reported as gaps, never as failures.</li>
+  <li>Tool capability comes from HTTP methods where the export has them, and otherwise from words in the tool's name. A name can be misleading, so unclear tools are marked unknown rather than assumed safe.</li>
+  <li>The Copilot Studio and Bedrock files here are synthetic, modelled on the real API field names. The real-world data covers MCP configs and the MCP Registry only.</li>
+  <li>Policy verification proves properties of the policy file as written. It does not prove that anything enforces it.</li>
+</ul>
+</main>
+</body>
+</html>

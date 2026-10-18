@@ -9,11 +9,11 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from discover_lite.connectors import copilot_export, mcp_config, mcp_registry
+from discover_lite.connectors import bedrock_agent, copilot_export, mcp_config, mcp_registry
 from discover_lite.models import Agent
 
 # Connectors where one file is one agent.
-CONNECTORS = [mcp_config, copilot_export]
+CONNECTORS = [mcp_config, copilot_export, bedrock_agent]
 
 # The shape problems a connector can hit when a field has the wrong type
 # (for example "args" is a string, not a list).

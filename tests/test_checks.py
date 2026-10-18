@@ -6,8 +6,10 @@ from typer.testing import CliRunner
 
 from discover_lite.checks import (
     ALL_CHECKS,
+    broad_filesystem_access,
     insecure_remote_server,
     missing_scope,
+    no_guardrail,
     no_human_in_loop,
     open_access,
     prompt_injection_exposure,
@@ -24,10 +26,14 @@ from discover_lite.models import Agent, McpServer, Tool
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
-# Synthetic values in well-known key formats (right shape, obviously fake).
-FAKE_OPENAI_KEY = "sk-FAKEFAKEFAKEFAKEFAKE1234"
-FAKE_GITHUB_TOKEN = "ghp_" + "FAKE" * 9
-FAKE_AWS_KEY = "AKIA" + "FAKEFAKEFAKEFAKE"
+# Synthetic values in well-known key formats: the right shape and random
+# enough for gitleaks' rules, but marked FAKE so nobody mistakes them.
+FAKE_OPENAI_KEY = "sk-FAKE0123456789abcdef" + "T3BlbkFJ" + "FAKE0123456789abcdef"
+FAKE_GITHUB_TOKEN = "ghp_FAKE" + "0123456789abcdefghijklmnopqrstuv"
+FAKE_AWS_KEY = "AKIA" + "FAKE234567QRSTUV"
+FAKE_SLACK_TOKEN = "xoxb-1234567890-0987654321-FAKEfake"
+# A JSON Web Token: header, claims {"sub": "FAKE"} and a made-up signature.
+FAKE_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJGQUtFIn0.FAKEsignature0123456789abcdef"
 
 
 def mcp_agent(**server_fields) -> Agent:
@@ -63,20 +69,48 @@ def test_redact_keeps_three_characters():
 @pytest.mark.parametrize(
     "fields",
     [
-        {"env": {"DB_PASSWORD": "FAKE_PASSWORD_FOR_TESTS"}},
-        {"env": {"API_KEY": "FAKE_KEY_FOR_TESTS"}},
-        {"headers": {"Authorization": "Bearer FAKE_TOKEN_FOR_TESTS"}},
-        # Harmless name, but the value is a known key format.
+        # Generated-looking values under secret-sounding names.
+        {"env": {"DB_PASSWORD": "FAKE_DB_PASSWORD_7f3a9c2e81b4"}},
+        {"env": {"API_KEY": "FAKE-9f8e7d6c5b4a3210"}},
+        {"headers": {"Authorization": "Bearer FAKE-token-4b8d2f6a9c1e"}},
+        # Harmless name, but the value is a known vendor format (gitleaks).
         {"env": {"OPENAI": FAKE_OPENAI_KEY}},
+        {"env": {"SLACK": FAKE_SLACK_TOKEN}},
         {"args": ["--token", FAKE_GITHUB_TOKEN]},
         {"args": [f"--aws={FAKE_AWS_KEY}"]},
-        {"env": {"SLACK": "xoxb-FAKE-FOR-TESTS-1234"}},
+        # A token passed as a header argument to a gateway (seen in real data).
+        {"args": ["--header", "authorization:Bearer " + FAKE_JWT]},
     ],
 )
-def test_secret_in_config_fires(fields):
+def test_secret_in_config_fires_high(fields):
     findings = secret_in_config(mcp_agent(**fields))
     assert len(findings) == 1
     assert findings[0].severity == "high"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Text a person typed, from real public configs (with names changed):
+        # placeholders in several languages, sample passwords, demo tokens.
+        "FAKE_PASSWORD_FOR_TESTS",
+        "seu_token_aqui",
+        "{secret}",
+        "\u60a8\u7684tushare\u4ee4\u724c",  # Chinese for "your tushare token".
+        "MyPassword123",
+        "test-token-123",
+        "acme-demo-readonly-token-public-not-reuse",
+    ],
+)
+def test_secret_in_config_typed_value_is_low(value):
+    [finding] = secret_in_config(mcp_agent(env={"API_TOKEN": value}))
+    assert finding.severity == "low"
+    assert "looks typed" in finding.evidence
+
+
+def test_secret_in_config_names_the_gitleaks_rule():
+    [finding] = secret_in_config(mcp_agent(env={"OPENAI": FAKE_OPENAI_KEY}))
+    assert "gitleaks rule 'openai-api-key'" in finding.evidence
 
 
 @pytest.mark.parametrize(
@@ -91,6 +125,12 @@ def test_secret_in_config_fires(fields):
         {"args": ["https://example.com/v0.3.0/task-graph-mcp-x86_64-unknown-linux-gnu.mcpb"]},
         # A plain word in args is not a key, even after "--token".
         {"args": ["-y", "some-package", "--token", "short"]},
+        # A package pinned to a git commit: 40 hex characters, but not a key.
+        {"args": ["--from", "git+https://github.com/acme/tool@" + "0123456789abcdef" * 2 + "01234567", "tool"]},
+        # A random-looking value under a harmless name is not a secret.
+        {"env": {"BUILD_ID": "9f8e7d6c5b4a3210abcdef"}},
+        # A Google key from public docs, which gitleaks lists as an example.
+        {"env": {"GOOGLE": "AIzaSyabcdefghijklmnopqrstuvwxyz1234567"}},
         # Other reference styles.
         {"env": {"API_KEY": "${env:API_KEY}"}},
         {"env": {"API_KEY": "${input:api_key}"}},
@@ -127,8 +167,9 @@ def test_secret_in_config_does_not_fire(fields):
 @pytest.mark.parametrize(
     "fields, secret",
     [
+        ({"env": {"DB_PASSWORD": "FAKE_DB_PASSWORD_7f3a9c2e81b4"}}, "FAKE_DB_PASSWORD_7f3a9c2e81b4"),
         ({"env": {"DB_PASSWORD": "FAKE_PASSWORD_FOR_TESTS"}}, "FAKE_PASSWORD_FOR_TESTS"),
-        ({"headers": {"Authorization": "Bearer FAKE_TOKEN_FOR_TESTS"}}, "FAKE_TOKEN_FOR_TESTS"),
+        ({"headers": {"Authorization": "Bearer FAKE-token-4b8d2f6a9c1e"}}, "FAKE-token-4b8d2f6a9c1e"),
         ({"args": [FAKE_GITHUB_TOKEN]}, FAKE_GITHUB_TOKEN),
     ],
 )
@@ -397,28 +438,80 @@ def test_topic_overlap_does_not_fire(topics):
     assert topic_overlap(copilot_agent(topics=topics)) == []
 
 
+# --- broad_filesystem_access ------------------------------------------------
+
+FILESYSTEM = "@modelcontextprotocol/server-filesystem@0.6.2"
+
+
+@pytest.mark.parametrize(
+    "path", ["/", "~", "${userHome}", "$HOME", "/home/alice", "/Users/alice/", "C:\\", "C:/Users/alice"]
+)
+def test_broad_filesystem_access_fires(path):
+    findings = broad_filesystem_access(mcp_agent(command="npx", args=["-y", FILESYSTEM, path]))
+    assert [f.severity for f in findings] == ["medium"]
+    assert path in findings[0].evidence
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        # A project folder, not a whole home.
+        {"command": "npx", "args": ["-y", FILESYSTEM, "/home/alice/projects/app"]},
+        # Another server whose argument happens to be "/": not a filesystem grant.
+        {"command": "npx", "args": ["-y", "some-web-server@1.0.0", "/"]},
+        {"url": "https://files.example.com/mcp"},
+    ],
+)
+def test_broad_filesystem_access_does_not_fire(fields):
+    assert broad_filesystem_access(mcp_agent(**fields)) == []
+
+
+# --- no_guardrail -------------------------------------------------------------
+
+
+def test_no_guardrail_fires_on_explicit_false():
+    assert [f.severity for f in no_guardrail(copilot_agent(guardrail=False))] == ["medium"]
+
+
+@pytest.mark.parametrize("guardrail", [True, None])
+def test_no_guardrail_does_not_fire(guardrail):
+    assert no_guardrail(copilot_agent(guardrail=guardrail)) == []
+
+
 # --- end to end -------------------------------------------------------------
 
 
 def test_fixtures_trigger_every_check():
     fired = set()
-    for path in FIXTURES.glob("*.json"):
+    for path in FIXTURES.rglob("*.json"):
         fired |= {f.check_id for f in run_all(load_any(path))}
     assert fired == {check.__name__ for check in ALL_CHECKS}
+
+
+def test_estate_has_clean_agents():
+    # At least one well-set-up agent must pass every check.
+    clean = {load_any(p).name for p in FIXTURES.rglob("*.json") if not run_all(load_any(p))}
+    assert {"IT Helpdesk", "Claims Helper"} <= clean
 
 
 @pytest.mark.parametrize("extra_args", [[], ["--json"]])
 def test_cli_never_prints_fixture_secret(extra_args):
     result = CliRunner().invoke(app, ["scan", str(FIXTURES), *extra_args])
     assert result.exit_code == 0
-    assert "FAKE_DB_PASSWORD_FOR_TESTS" not in result.output
+    assert "FAKE_DB_PASSWORD_7f3a9c2e81b4" not in result.output
 
 
 def test_cli_json_output():
     result = CliRunner().invoke(app, ["scan", str(FIXTURES), "--json"])
     data = json.loads(result.output)
-    names = {entry["agent"]["name"] for entry in data}
-    assert names == {"claude_desktop_config.json", "HR Helper"}
+    by_name = {entry["agent"]["name"]: entry for entry in data}
+    assert len(data) == 12
+    assert {"HR Helper", "Travel Booker", ".mcp.json"} <= set(by_name)
+    hr = by_name["HR Helper"]
+    assert hr["score"] == 100
+    # The breakdown explains every point of the score (each part is rounded
+    # to 2 decimal places in the JSON, so allow a little rounding error).
+    assert abs(sum(hr["score_breakdown"].values()) - hr["score"]) < 0.1
 
 
 def test_stats_on_fixtures():
@@ -426,13 +519,16 @@ def test_stats_on_fixtures():
 
     agents, skipped = stats.collect(FIXTURES)
     rows = {label: (count, share) for label, count, share in stats.compute(agents, skipped)}
-    assert rows["Configs parsed"] == (2, "")
-    assert rows["Servers"][0] == 4
-    # postgres is unpinned, filesystem is pinned.
-    assert rows["Package-runner servers with no exact version"] == (1, "50.0%")
-    # legacy-wiki is plain HTTP; tickets is HTTPS with an Authorization header.
-    assert rows["Remote servers on plain HTTP (non-local)"] == (1, "50.0%")
-    assert rows["Servers with a hard-coded secret"] == (1, "25.0%")
+    assert rows["Configs parsed"] == (12, "")
+    # Three MCP client files hold 9 servers between them.
+    assert rows["Servers"][0] == 9
+    # postgres and git are unpinned; the other four runners are pinned.
+    assert rows["Package-runner servers with no exact version"] == (2, "33.3%")
+    # legacy-wiki is plain HTTP; the two other remotes use HTTPS.
+    assert rows["Remote servers on plain HTTP (non-local)"] == (1, "33.3%")
+    assert rows["Servers with a hard-coded secret"] == (1, "11.1%")
+    # The fixture password looks generated, so it is high, not a typed value.
+    assert rows["Configs with only typed values under secret names (password or placeholder)"] == (0, "0.0%")
 
 
 def test_review_secrets_lists_file_but_not_secret():
@@ -440,7 +536,7 @@ def test_review_secrets_lists_file_but_not_secret():
     assert result.exit_code == 0
     assert "claude_desktop_config.json" in result.output
     assert "FAK****" in result.output
-    assert "FAKE_DB_PASSWORD_FOR_TESTS" not in result.output
+    assert "FAKE_DB_PASSWORD_7f3a9c2e81b4" not in result.output
 
 
 def test_findings_by_check_on_fixtures():
@@ -448,9 +544,10 @@ def test_findings_by_check_on_fixtures():
 
     agents, _ = stats.collect(FIXTURES)
     rows = {(check, sev): (n, configs) for check, sev, n, configs, _ in stats.findings_by_check(agents)}
-    # HR Helper has two open_access findings of different severities.
+    # open_access has two severities: HR Helper has both, Sales Assistant
+    # only the medium one (shared with the whole organisation).
     assert rows[("open_access", "high")] == (1, 1)
-    assert rows[("open_access", "medium")] == (1, 1)
+    assert rows[("open_access", "medium")] == (2, 2)
     assert rows[("secret_in_config", "high")] == (1, 1)
 
 

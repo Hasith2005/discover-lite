@@ -1,0 +1,22 @@
+{
+  "type": "microsoft.copilotstudio/agents",
+  "properties": {
+    "displayName": "IT Helpdesk",
+    "instructions": "You help employees with IT problems such as printers and laptops. Only create tickets for the signed-in user. Never change passwords or account permissions; send those requests to the service desk instead.",
+    "authentication": "Microsoft Entra",
+    "sharedWithViewers": {"entireTenant": false},
+    "IsWebSearchEnabledForKnowledge": false,
+    "powerPlatformConnectors": [
+      {
+        "operations": [
+          {"operationId": "GetTicketStatus", "method": "GET", "usedAs": "Tool"},
+          {"operationId": "CreateTicket", "method": "POST", "usedAs": "Tool", "requiresEndUserConsent": true}
+        ]
+      }
+    ],
+    "topics": {
+      "printer_issue": ["printer not working", "cannot print", "paper jam"],
+      "new_laptop": ["request a new laptop", "laptop replacement", "my laptop is broken"]
+    }
+  }
+}

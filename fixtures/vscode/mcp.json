@@ -1,0 +1,23 @@
+{
+  "inputs": [
+    {"id": "notion_key", "type": "promptString", "description": "Notion API key", "password": true}
+  ],
+  "servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem@0.6.2", "${userHome}"]
+    },
+    "git": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["mcp-server-git"]
+    },
+    "notion": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@notionhq/notion-mcp-server@1.8.1"],
+      "env": {"NOTION_TOKEN": "${input:notion_key}"}
+    }
+  }
+}

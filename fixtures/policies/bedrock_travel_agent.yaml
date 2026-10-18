@@ -1,0 +1,13 @@
+# Travel Booker: the policy forgets the code interpreter and the hotel
+# reservation tool, which property 3 should catch.
+rules:
+  - tool: search_flights
+    effect: allow
+  - tool: searchHotels
+    effect: allow
+  - tool: book_flight
+    effect: allow
+    require_approval: true
+  - tool: cancel_booking
+    effect: allow
+    require_approval: true

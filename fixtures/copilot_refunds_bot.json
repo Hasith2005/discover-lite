@@ -1,0 +1,22 @@
+{
+  "type": "microsoft.copilotstudio/agents",
+  "properties": {
+    "displayName": "Refunds Bot",
+    "instructions": "You help customers request refunds for orders they placed. Look up the order first, confirm the amount with the customer, and only refund the original payment method.",
+    "authentication": "Microsoft Entra",
+    "sharedWithViewers": {"entireTenant": false},
+    "IsWebSearchEnabledForKnowledge": false,
+    "powerPlatformConnectors": [
+      {
+        "operations": [
+          {"operationId": "LookupOrder", "method": "GET", "usedAs": "Tool"},
+          {"operationId": "IssueRefund", "method": "POST", "usedAs": "Tool", "requiresEndUserConsent": false}
+        ]
+      }
+    ],
+    "topics": {
+      "refund_request": ["I want a refund", "refund my order", "money back"],
+      "order_status": ["where is my order", "track my delivery"]
+    }
+  }
+}

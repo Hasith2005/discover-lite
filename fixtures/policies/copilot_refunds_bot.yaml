@@ -1,0 +1,17 @@
+# Refunds Bot: small refunds skip approval, which property 1 should catch.
+# The deny rule for very large refunds overlaps the second allow rule, which
+# property 2 should catch.
+rules:
+  - tool: LookupOrder
+    effect: allow
+  - tool: IssueRefund
+    effect: allow
+    when: {amount_max: 100}
+    require_approval: false
+  - tool: IssueRefund
+    effect: allow
+    when: {amount_min: 101}
+    require_approval: true
+  - tool: IssueRefund
+    effect: deny
+    when: {amount_min: 5000}

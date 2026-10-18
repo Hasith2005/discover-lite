@@ -1,0 +1,19 @@
+{
+  "type": "microsoft.copilotstudio/agents",
+  "properties": {
+    "displayName": "Research Assistant",
+    "instructions": "You find and summarise public articles and internal documents for analysts. You can only read; you cannot send, change or delete anything. Always cite your sources.",
+    "authentication": "Microsoft Entra",
+    "sharedWithViewers": {"entireTenant": false},
+    "IsWebSearchEnabledForKnowledge": true,
+    "powerPlatformConnectors": [
+      {
+        "operations": [
+          {"operationId": "SearchDocuments", "method": "GET", "usedAs": "Tool"},
+          {"operationId": "GetArticle", "method": "GET", "usedAs": "Tool"}
+        ]
+      }
+    ],
+    "topics": {}
+  }
+}

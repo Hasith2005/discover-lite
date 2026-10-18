@@ -47,7 +47,7 @@ class Agent(BaseModel):
 
     id: str
     name: str
-    platform: Literal["mcp_client", "copilot_studio", "mcp_registry"]
+    platform: Literal["mcp_client", "copilot_studio", "mcp_registry", "bedrock_agent"]
     source_file: str
     instructions: str | None = None
     tools: list[Tool] = []
@@ -57,6 +57,9 @@ class Agent(BaseModel):
     shared_org_wide: bool | None = None
     # Topic name -> list of trigger phrases.
     topics: dict[str, list[str]] = {}
+    # Whether a content filter (e.g. an AWS Bedrock guardrail) screens what
+    # goes in and out of the model.
+    guardrail: bool | None = None
 
 
 class Finding(BaseModel):
