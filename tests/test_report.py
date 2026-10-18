@@ -4,7 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from discover_lite.cli import app
-from discover_lite.report import build_report, scan_folder, top_issues
+from discover_lite.report import build_report, scan_path, top_issues
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -40,7 +40,7 @@ def test_report_escapes_html_from_configs(tmp_path):
 
 
 def test_top_issues_are_plain_sentences():
-    issues = top_issues(scan_folder(FIXTURES))
+    issues = top_issues(scan_path(FIXTURES))
     assert len(issues) == 3
     # no_human_in_loop affects the most agents (HR Helper, Refunds Bot, Travel Booker).
     assert issues[0] == "3 of 12 agents have a tool that changes data with no approval."

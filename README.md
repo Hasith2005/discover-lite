@@ -16,6 +16,18 @@ python -m venv .venv
 .venv/bin/pytest
 ```
 
+Every scanning command (`scan`, `report`, `verify`, `coverage`) takes either a folder, which is searched for `.json` files, or a single config file of any supported kind:
+
+```bash
+.venv/bin/discover-lite scan fixtures/bedrock_travel_agent.json                       # terminal output
+.venv/bin/discover-lite scan fixtures/bedrock_travel_agent.json --json                # JSON output
+.venv/bin/discover-lite scan ~/.cursor/mcp.json --report cursor.html                  # terminal output and an HTML report
+.venv/bin/discover-lite report fixtures/copilot_refunds_bot.json -o refunds.html      # HTML report only
+.venv/bin/discover-lite verify fixtures/copilot_refunds_bot.json                      # uses policies/ beside the file
+```
+
+Supported files: Copilot Studio agents, AWS Bedrock agents, MCP client configs (Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Cline, Gemini CLI) and MCP Registry pages. A single file in any other format (an Azure AI Foundry agent, for example, which has no connector yet) stops with an error and exit code 1, so it is never mistaken for a clean result.
+
 Real public data (the only commands that use the network):
 
 ```bash

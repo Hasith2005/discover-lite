@@ -1,6 +1,6 @@
-"""Scan a folder and build the one-page HTML report.
+"""Scan a config file or a folder and build the one-page HTML report.
 
-`scan_folder` is shared with the CLI, so the report and `discover-lite scan`
+`scan_path` is shared with the CLI, so the report and `discover-lite scan`
 always agree. The page is rendered from a Jinja2 template with autoescaping
 on: evidence comes from config files we do not control, so any HTML in it
 must be shown as text, never run.
@@ -51,10 +51,20 @@ class ScannedAgent:
     breakdown: dict[str, float]
 
 
-def scan_folder(folder: Path) -> list[ScannedAgent]:
-    """Run every check on every agent in every .json file under `folder`."""
+def config_files(path: Path) -> list[Path]:
+    """The file itself, or every .json file under a folder."""
+    return [path] if path.is_file() else sorted(path.rglob("*.json"))
+
+
+def default_policies(path: Path) -> Path:
+    """Where policy files sit by default: `policies/` beside a file, or inside a folder."""
+    return (path.parent if path.is_file() else path) / "policies"
+
+
+def scan_path(target: Path) -> list[ScannedAgent]:
+    """Run every check on every agent in one config file, or in every .json file under a folder."""
     results = []
-    for path in sorted(folder.rglob("*.json")):
+    for path in config_files(target):
         # Files we do not recognise give no agents and are skipped.
         for agent in load_agents(path):
             findings = sorted(run_all(agent), key=lambda f: SEVERITY_ORDER[f.severity])
@@ -107,13 +117,13 @@ def real_world_sections(github_dir: Path | None, registry_dir: Path | None) -> l
 
 
 def build_report(
-    folder: Path,
+    target: Path,
     policies_dir: Path | None = None,
     github_dir: Path | None = None,
     registry_dir: Path | None = None,
 ) -> str:
-    """The full report as one self-contained HTML page."""
-    results = scan_folder(folder)
+    """The full report for a config file or a folder, as one self-contained HTML page."""
+    results = scan_path(target)
     all_findings = [f for r in results for f in r.findings]
 
     verifications = []
@@ -131,7 +141,7 @@ def build_report(
     env = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoescape(["html"]))
     return env.get_template("report.html").render(
         today=date.today().isoformat(),
-        folder=str(folder),
+        target=str(target),
         results=sorted(results, key=lambda r: -r.score),
         agents_with_findings=sum(bool(r.findings) for r in results),
         counts={s: sum(f.severity == s for f in all_findings) for s in SEVERITY_ORDER},

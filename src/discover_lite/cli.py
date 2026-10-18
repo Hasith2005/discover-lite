@@ -1,9 +1,9 @@
 """Command-line entry point.
 
-    discover-lite scan <folder> [--json]
-    discover-lite report <folder> [-o report.html]
-    discover-lite verify <folder>
-    discover-lite coverage <folder>
+    discover-lite scan <file or folder> [--json] [--report report.html]
+    discover-lite report <file or folder> [-o report.html]
+    discover-lite verify <file or folder>
+    discover-lite coverage <file or folder>
     discover-lite fetch-github [--limit N]
     discover-lite fetch-registry [--limit N]
     discover-lite stats <folder>
@@ -20,19 +20,40 @@ from discover_lite import fetch_github, fetch_registry, stats
 from discover_lite.connectors import load_agents
 from discover_lite.coverage import cell, coverage
 from discover_lite.mappings import load_mappings
-from discover_lite.report import SEVERITY_ORDER, build_report, scan_folder
+from discover_lite.report import SEVERITY_ORDER, build_report, default_policies, scan_path
 from discover_lite.verifier import load_policy, policy_path, verify
 
 app = typer.Typer(help="Static analyser for AI agent configurations.")
 
+# What a single file must be for a connector to read it.
+SUPPORTED = (
+    "a Copilot Studio agent, an AWS Bedrock agent, an MCP client config (Claude Desktop, "
+    "Claude Code, Cursor, VS Code, Windsurf, Cline, Gemini CLI) or an MCP Registry page"
+)
+
+# A config file or a folder of them, for every command that scans.
+TARGET = typer.Argument(..., exists=True, help="A config file, or a folder to scan for .json files.")
+
+
+def _scan(target: Path):
+    """Scan the target; a single file no connector recognises is an error, not a clean result."""
+    results = scan_path(target)
+    if target.is_file() and not results:
+        typer.echo(f"{target}: not a config Discover Lite can read. Supported: {SUPPORTED}.", err=True)
+        raise typer.Exit(1)
+    return results
+
 
 @app.command()
 def scan(
-    folder: Path = typer.Argument(..., exists=True, file_okay=False, help="Folder to scan."),
+    target: Path = TARGET,
     as_json: bool = typer.Option(False, "--json", help="Print results as JSON."),
+    report_file: Path = typer.Option(None, "--report", help="Also write the HTML report to this file."),
 ) -> None:
-    """Scan every .json file under FOLDER and report risky agent setups."""
-    results = scan_folder(folder)
+    """Scan a config file, or every .json file under a folder, and report risky agent setups."""
+    results = _scan(target)
+    if report_file:
+        report_file.write_text(build_report(target, default_policies(target)), encoding="utf-8")
 
     if as_json:
         mappings = load_mappings()
@@ -51,6 +72,9 @@ def scan(
         typer.echo(json.dumps(output, indent=2))
         return
 
+    if report_file:
+        typer.echo(f"Wrote {report_file}\n")
+
     for r in results:
         typer.echo(f"{r.agent.name}  ({r.agent.platform}, {r.agent.source_file})  risk {r.score:.0f}/100")
         if not r.findings:
@@ -62,7 +86,7 @@ def scan(
     all_findings = [f for r in results for f in r.findings]
     counts = {s: sum(f.severity == s for f in all_findings) for s in SEVERITY_ORDER}
     typer.echo(
-        f"{len(results)} agents, {len(all_findings)} findings "
+        f"{len(results)} agent{'' if len(results) == 1 else 's'}, {len(all_findings)} findings "
         f"({counts['high']} high, {counts['medium']} medium, {counts['low']} low)"
     )
     # Show the limits of the capability heuristic, not just its results.
@@ -73,26 +97,27 @@ def scan(
 
 @app.command()
 def report(
-    folder: Path = typer.Argument(..., exists=True, file_okay=False, help="Folder to scan."),
+    target: Path = TARGET,
     output: Path = typer.Option(Path("report.html"), "-o", "--output", help="Where to write the report."),
-    policies: Path = typer.Option(None, help="Policy folder (default: FOLDER/policies)."),
+    policies: Path = typer.Option(None, help="Policy folder (default: policies/ beside the file or in the folder)."),
     github: Path = typer.Option(Path("data/github-configs"), help="Downloaded GitHub configs, if any."),
     registry: Path = typer.Option(Path("data/registry"), help="Downloaded registry pages, if any."),
 ) -> None:
-    """Write a self-contained HTML report for FOLDER."""
-    html = build_report(folder, policies or folder / "policies", github, registry)
+    """Write a self-contained HTML report for a config file or a folder."""
+    _scan(target)  # Stop early on a file no connector can read.
+    html = build_report(target, policies or default_policies(target), github, registry)
     output.write_text(html, encoding="utf-8")
     typer.echo(f"Wrote {output}")
 
 
 @app.command("verify")
 def verify_command(
-    folder: Path = typer.Argument(..., exists=True, file_okay=False, help="Folder to scan."),
-    policies: Path = typer.Option(None, help="Policy folder (default: FOLDER/policies)."),
+    target: Path = TARGET,
+    policies: Path = typer.Option(None, help="Policy folder (default: policies/ beside the file or in the folder)."),
 ) -> None:
     """Prove properties of each agent's tool policy with the Z3 solver."""
-    policies = policies or folder / "policies"
-    for r in scan_folder(folder):
+    policies = policies or default_policies(target)
+    for r in _scan(target):
         path = policy_path(policies, r.agent)
         if not path.exists():
             continue
@@ -105,10 +130,10 @@ def verify_command(
 
 @app.command("coverage")
 def coverage_command(
-    folder: Path = typer.Argument(..., exists=True, file_okay=False, help="Folder to scan."),
+    target: Path = TARGET,
 ) -> None:
     """Show which security signals each platform's files actually contain."""
-    table = coverage([r.agent for r in scan_folder(folder)])
+    table = coverage([r.agent for r in _scan(target)])
     platforms = list(table)
     typer.echo("| Signal | " + " | ".join(platforms) + " |")
     typer.echo("|---" * (len(platforms) + 1) + "|")
