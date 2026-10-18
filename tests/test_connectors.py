@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from discover_lite.connectors import load_any
-from discover_lite.connectors.copilot_export import infer_capability
+from discover_lite.connectors.copilot_export import classify, infer_capability
 from discover_lite.models import Agent, McpServer, Tool
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
@@ -107,3 +107,24 @@ def test_load_any_returns_none_for_unrecognised(tmp_path, content):
     path = tmp_path / "config.json"
     path.write_text(content)
     assert load_any(path) is None
+
+
+@pytest.mark.parametrize(
+    "operation_id, method, expected",
+    [
+        # The method decides when the name says nothing.
+        ("EscalateCase", "POST", "write"),
+        ("EscalateCase", "DELETE", "write"),
+        ("EscalateCase", "GET", "read"),
+        ("EscalateCase", "get", "read"),
+        # Either source saying "write" wins: fail closed.
+        ("GetReport", "POST", "write"),
+        ("DeleteFile", "GET", "write"),
+        # No method, or one we do not know: the name decides.
+        ("EscalateCase", None, "unknown"),
+        ("EscalateCase", "TRACE", "unknown"),
+        ("GetReport", None, "read"),
+    ],
+)
+def test_classify(operation_id, method, expected):
+    assert classify(operation_id, method) == expected

@@ -11,8 +11,8 @@
     "powerPlatformConnectors": [
       {
         "operations": [
-          {"operationId": "SendEmailV2", "usedAs": "Tool", "requiresEndUserConsent": false},
-          {"operationId": "GetMyProfile", "usedAs": "Topic Tool"},
+          {"operationId": "SendEmailV2", "method": "POST", "usedAs": "Tool", "requiresEndUserConsent": false},
+          {"operationId": "GetMyProfile", "method": "GET", "usedAs": "Topic Tool"},
           {"operationId": "EscalateCase", "usedAs": "Tool", "requiresEndUserConsent": false}
         ]
       },

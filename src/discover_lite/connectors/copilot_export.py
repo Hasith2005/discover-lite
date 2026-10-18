@@ -1,7 +1,8 @@
 """Connector for a synthetic Copilot Studio-style agent export.
 
 Field names follow Microsoft's Copilot Studio agent inventory schema.
-`instructions` and `topics` are our own additions to the format.
+`instructions`, `topics` and each operation's `method` are our own additions
+to the format.
 This connector only reads JSON.
 """
 
@@ -27,6 +28,14 @@ WRITE_WORDS = {
 READ_WORDS = {
     "get", "list", "search", "find", "read", "query", "fetch", "lookup", "look",
     "view", "show", "retrieve", "download", "describe", "count", "browse",
+}
+
+# HTTP methods from a connector's OpenAPI definition. These describe what the
+# operation does, so they are a better signal than its name. An API can still
+# misuse them (a GET that deletes), so a write word in the name still wins.
+METHOD_CAPABILITY = {
+    "GET": "read", "HEAD": "read",
+    "POST": "write", "PUT": "write", "PATCH": "write", "DELETE": "write",
 }
 
 
@@ -68,6 +77,22 @@ def infer_capability(operation_id: str) -> str:
     return "unknown"
 
 
+def classify(operation_id: str, method: str | None) -> str:
+    """Combine the HTTP method (if the export has one) with the name heuristic.
+
+    Fails closed: if either source says "write", the answer is "write".
+    Otherwise either source saying "read" is enough. A method we do not know,
+    or no method at all, leaves the name heuristic to decide.
+    """
+    from_name = infer_capability(operation_id)
+    from_method = METHOD_CAPABILITY.get(method.upper()) if isinstance(method, str) else None
+    if "write" in (from_name, from_method):
+        return "write"
+    if "read" in (from_name, from_method):
+        return "read"
+    return "unknown"
+
+
 def parse(data: dict, path: Path) -> Agent:
     props = data["properties"]
 
@@ -80,7 +105,7 @@ def parse(data: dict, path: Path) -> Agent:
             tools.append(
                 Tool(
                     name=op["operationId"],
-                    capability=infer_capability(op["operationId"]),
+                    capability=classify(op["operationId"], op.get("method")),
                     # Missing key stays None: the export does not say.
                     requires_approval=op.get("requiresEndUserConsent"),
                 )
