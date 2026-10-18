@@ -1,0 +1,86 @@
+{
+  "servers": [
+    {
+      "server": {
+        "name": "ai.2kw/mcp-server",
+        "title": "2kw.ai",
+        "version": "6.3.0",
+        "packages": [
+          {
+            "registryType": "npm",
+            "registryBaseUrl": "https://registry.npmjs.org",
+            "identifier": "@2kw/ai-mcp-server",
+            "version": "6.3.0",
+            "transport": {
+              "type": "stdio"
+            },
+            "environmentVariables": [
+              {
+                "description": "API key for the 2kw.ai platform",
+                "isRequired": true,
+                "isSecret": true,
+                "name": "AI_2KW_API_KEY"
+              },
+              {
+                "description": "Override the API base URL for self-hosted deployments",
+                "name": "AI_2KW_BASE_URL"
+              },
+              {
+                "description": "true opts agent runs into agent memory (X-Backbone-Memory: enabled)",
+                "name": "AI_2KW_MEMORY"
+              }
+            ]
+          }
+        ]
+      },
+      "_meta": {
+        "io.modelcontextprotocol.registry/official": {
+          "isLatest": true
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "ac.inference.sh/mcp",
+        "title": "inference.sh",
+        "version": "2.0.1",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://api.inference.sh/mcp"
+          }
+        ]
+      },
+      "_meta": {
+        "io.modelcontextprotocol.registry/official": {
+          "isLatest": true
+        }
+      }
+    },
+    {
+      "server": {
+        "name": "ac.inference.sh/mcp",
+        "title": "inference.sh",
+        "version": "1.0.0",
+        "remotes": [
+          {
+            "type": "streamable-http",
+            "url": "https://sh.inference.ac"
+          },
+          {
+            "type": "streamable-http",
+            "url": "https://api.inference.sh/mcp"
+          }
+        ]
+      },
+      "_meta": {
+        "io.modelcontextprotocol.registry/official": {
+          "isLatest": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "count": 3
+  }
+}
