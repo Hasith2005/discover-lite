@@ -56,31 +56,38 @@
 {% for issue in top_issues %}  <li>{{ issue }}</li>
 {% endfor %}</ul>
 
-<h2>Agents by risk score</h2>
-<p class="muted">Scores run from 0 to 100. Each failed check adds its weight, and reading untrusted content together with an unapproved action tool adds a bonus. The breakdown below each agent shows exactly which checks the points came from.</p>
+<h2>Agents by AIVSS score</h2>
+<p class="muted">Scores follow OWASP AIVSS v0.8 (0 to 10): each security finding's CVSS v4.0 base score, raised by ten agentic factors such as autonomy and tool access. A config does not show every factor, so each score is a range: the low end counts only what the config shows, the high end assumes the worst for the rest. An agent takes its highest finding's score.</p>
 <div class="wrap"><table>
-  <tr><th>Agent</th><th>Platform</th><th class="num">Score</th><th class="num">Findings</th></tr>
-{% for r in results %}  <tr><td><a href="#agent-{{ loop.index }}">{{ r.agent.name }}</a></td><td>{{ r.agent.platform }}</td><td class="num">{{ "%.0f"|format(r.score) }}</td><td class="num">{{ r.findings|length }}</td></tr>
+  <tr><th>Agent</th><th>Platform</th><th class="num">AIVSS</th><th class="num">Findings</th></tr>
+{% for r in results %}  <tr><td><a href="#agent-{{ loop.index }}">{{ r.agent.name }}</a></td><td>{{ r.agent.platform }}</td><td class="num">{{ r.risk.text }}</td><td class="num">{{ r.findings|length }}</td></tr>
 {% endfor %}</table></div>
 
 <h2>Agent details</h2>
 {% for r in results %}
 <div class="agent" id="agent-{{ loop.index }}">
-  <h3>{{ r.agent.name }} <span class="muted">· {{ r.agent.platform }} · score {{ "%.0f"|format(r.score) }}</span></h3>
+  <h3>{{ r.agent.name }} <span class="muted">· {{ r.agent.platform }} · AIVSS {{ r.risk.text }}</span></h3>
   <p class="muted">Source: <code>{{ r.agent.source_file }}</code></p>
   {% if not r.findings %}<p class="ok">No findings.</p>{% else %}
-  <p><b>Where the score comes from</b></p>
+  {% if r.risk.score %}
+  <p><b>Agentic factors</b> <span class="muted">(AIVSS rubric, 0.0, 0.5 or 1.0 each)</span></p>
   <div class="wrap"><table>
-    <tr><th>Check</th><th class="num">Points</th><th></th></tr>
-    {% for check, points in r.breakdown|dictsort(by="value", reverse=true) %}<tr><td>{{ check }}</td><td class="num">{{ "%.1f"|format(points) }}</td><td><span class="bar" style="width: {{ (points * 2)|round|int }}px"></span></td></tr>
+    <tr><th>Factor</th><th class="num">Value</th><th>Why</th></tr>
+    {% for f in r.risk.factors %}<tr><td>{{ f.name }}</td><td class="num">{% if f.assumed %}0.0-1.0{% else %}{{ f.value }}{% endif %}</td><td{% if f.assumed %} class="muted"{% endif %}>{{ f.reason }}</td></tr>
     {% endfor %}</table></div>
+  <p><b>Scored findings</b></p>
+  <div class="wrap"><table>
+    <tr><th>Check</th><th>CVSS v4.0 vector</th><th class="num">CVSS</th><th class="num">AIVSS</th></tr>
+    {% for s in r.risk.findings %}<tr><td>{{ s.finding.check_id }} <span class="muted">({{ s.finding.severity }})</span></td><td><code>{{ s.vector }}</code></td><td class="num">{{ s.cvss_base }}</td><td class="num">{{ s.low }}-{{ s.score }}</td></tr>
+    {% endfor %}</table></div>
+  {% endif %}
   <p><b>Findings</b></p>
   <div class="wrap"><table>
     <tr><th>Severity</th><th>Finding</th><th>Frameworks</th></tr>
     {% for f in r.findings %}{% set m = mappings[f.check_id] %}<tr>
       <td class="sev {{ f.severity }}">{{ f.severity }}</td>
       <td><b>{{ m.title }}</b><br>{{ f.evidence }}<br><span class="muted">Why it matters: {{ m.why }}</span><br>Fix: {{ f.recommendation }}</td>
-      <td>{% if m.owasp_llm_2026 %}OWASP {{ m.owasp_llm_2026|join(", ") }}{% else %}Quality finding{% endif %}<br><span class="muted">NIST AI RMF: {{ m.nist_ai_rmf|join(", ") }}{% if m.atlas %}<br>MITRE ATLAS: {{ m.atlas|join(", ") }}{% endif %}</span></td>
+      <td>{% if m.owasp_llm_2026 %}OWASP {{ m.owasp_llm_2026|join(", ") }}{% else %}Quality finding{% endif %}<br><span class="muted">NIST AI RMF: {{ m.nist_ai_rmf|join(", ") }}{% if m.atlas %}<br>MITRE ATLAS: {{ m.atlas|join(", ") }}{% endif %}{% if m.cvss_why %}<br>CVSS: {{ m.cvss_why }}{% endif %}</span></td>
     </tr>
     {% endfor %}</table></div>
   {% endif %}
@@ -124,6 +131,14 @@
 {% endfor %}
 {% endif %}
 
+<h2>Where each part comes from</h2>
+<p class="muted">Published: taken as written from a public standard or upstream project. Our judgement: a choice made for this tool, written down so it can be checked and argued with.</p>
+<div class="wrap"><table>
+  <tr><th>Part</th><th>Basis</th><th>Source or reason</th></tr>
+  {% for part, source in provenance[0] %}<tr><td>{{ part }}</td><td class="ok">Published</td><td>{{ source }}</td></tr>
+  {% endfor %}{% for part, reason in provenance[1] %}<tr><td>{{ part }}</td><td class="sev medium">Our judgement</td><td>{{ reason }}</td></tr>
+  {% endfor %}</table></div>
+
 <h2>What this tool does not do</h2>
 <ul>
   <li>It reads configuration only. It never runs an agent, connects to a server or watches live traffic, so it cannot see what an agent actually does.</li>
@@ -131,6 +146,7 @@
   <li>Tool capability comes from HTTP methods where the export has them, and otherwise from words in the tool's name. A name can be misleading, so unclear tools are marked unknown rather than assumed safe.</li>
   <li>The Copilot Studio and Bedrock files here are synthetic, modelled on the real API field names. The real-world data covers MCP configs and the MCP Registry only.</li>
   <li>Policy verification proves properties of the policy file as written. It does not prove that anything enforces it.</li>
+  <li>AIVSS is a v0.8 draft, and the spec calls some of its values provisional. Scores will move if the published method changes.</li>
 </ul>
 </main>
 </body>

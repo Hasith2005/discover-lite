@@ -13,7 +13,7 @@ def test_report_has_every_section(tmp_path):
     html = build_report(FIXTURES, FIXTURES / "policies")
     for heading in [
         "Estate summary",
-        "Agents by risk score",
+        "Agents by AIVSS score",
         "Agent details",
         "Policy verification",
         "What each platform tells us",
@@ -66,3 +66,15 @@ def test_coverage_command():
     result = CliRunner().invoke(app, ["coverage", str(FIXTURES)])
     assert result.exit_code == 0
     assert "| Guardrail setting | 2/2 | 0/7 | 0/3 |" in result.output
+
+
+def test_report_says_what_is_published_and_what_is_judgement():
+    from discover_lite import checks
+    from discover_lite.report import build_report
+
+    page = build_report(FIXTURES)
+    assert "Where each part comes from" in page
+    assert "OWASP AIVSS v0.8" in page and "gitleaks v8.30.1" in page
+    # Thresholds come from the code, so the report cannot drift from it.
+    assert f"Instructions under {checks.MIN_INSTRUCTION_WORDS} words" in page
+    assert f"similarity {checks.TOPIC_OVERLAP_THRESHOLD} or more" in page

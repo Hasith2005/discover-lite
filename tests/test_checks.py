@@ -506,12 +506,17 @@ def test_cli_json_output():
     data = json.loads(result.output)
     by_name = {entry["agent"]["name"]: entry for entry in data}
     assert len(data) == 12
-    assert {"HR Helper", "Travel Booker", ".mcp.json"} <= set(by_name)
+    assert {"HR Helper", "Travel Booker", "web-app/.mcp.json"} <= set(by_name)
     hr = by_name["HR Helper"]
-    assert hr["score"] == 100
-    # The breakdown explains every point of the score (each part is rounded
-    # to 2 decimal places in the JSON, so allow a little rounding error).
-    assert abs(sum(hr["score_breakdown"].values()) - hr["score"]) < 0.1
+    # The agent takes its highest finding's AIVSS range, and every security
+    # finding carries the inputs behind its score.
+    assert (hr["aivss"]["low"], hr["aivss"]["score"]) == (9.1, 10.0)
+    assert len(hr["aivss"]["factors"]) == 10
+    scored = [f for f in hr["findings"] if "aivss" in f]
+    assert max(f["aivss"] for f in scored) == hr["aivss"]["score"]
+    assert all(f["cvss_v4"].startswith("CVSS:4.0/") for f in scored)
+    # Quality findings are not vulnerabilities, so they get no score.
+    assert all("aivss" not in f for f in hr["findings"] if f["check_id"] == "topic_overlap")
 
 
 def test_stats_on_fixtures():

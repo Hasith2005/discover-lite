@@ -45,3 +45,12 @@ def test_unrecognised_file_is_an_error(tmp_path):
     result = run("scan", unknown)
     assert result.exit_code == 1
     assert "not a config Discover Lite can read" in result.output
+
+
+def test_verify_without_any_policy_fails(tmp_path):
+    # No policy means nothing was checked, which must not read as a pass.
+    config = tmp_path / "mcp.json"
+    config.write_text('{"mcpServers": {"git": {"command": "uvx", "args": ["mcp-server-git==1.0.0"]}}}')
+    result = run("verify", config)
+    assert result.exit_code == 1
+    assert "not verified" in result.output

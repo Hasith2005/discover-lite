@@ -17,6 +17,8 @@ dependencies = [
     "pyyaml",
     "z3-solver",
     "jinja2",
+    # CVSS v4.0 base scores, the input to OWASP AIVSS.
+    "cvss>=3.2",
     # tomllib is built into Python 3.11+; tomli is the same parser for 3.10.
     'tomli>=2; python_version < "3.11"',
 ]

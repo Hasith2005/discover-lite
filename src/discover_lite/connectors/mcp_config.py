@@ -86,7 +86,9 @@ def parse(data: dict, path: Path) -> Agent:
     # settings, so those fields stay at their defaults.
     return Agent(
         id=path.name,
-        name=path.name,
+        # A file like .mcp.json has the same name in every project, so the
+        # folder it sits in says which one this is.
+        name=f"{path.parent.name}/{path.name}" if path.name.startswith(".") else path.name,
         platform="mcp_client",
         source_file=str(path),
         tools=tools,

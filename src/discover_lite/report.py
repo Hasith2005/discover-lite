@@ -13,13 +13,14 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from discover_lite import stats
+from discover_lite import aivss, checks, stats
 from discover_lite.checks import run_all
 from discover_lite.connectors import load_agents
 from discover_lite.coverage import cell, coverage
+from discover_lite.aivss import AgentRisk, score_agent
 from discover_lite.mappings import load_mappings
 from discover_lite.models import Agent, Finding
-from discover_lite.scoring import WEIGHTS, score_agent
+from discover_lite.secret_rules import load_rules
 from discover_lite.verifier import load_policy, policy_path, verify
 
 TEMPLATES = Path(__file__).parent / "templates"
@@ -47,8 +48,7 @@ SUMMARY_PHRASES = {
 class ScannedAgent:
     agent: Agent
     findings: list[Finding]
-    score: float
-    breakdown: dict[str, float]
+    risk: AgentRisk
 
 
 def config_files(path: Path) -> list[Path]:
@@ -68,9 +68,41 @@ def scan_path(target: Path) -> list[ScannedAgent]:
         # Files we do not recognise give no agents and are skipped.
         for agent in load_agents(path):
             findings = sorted(run_all(agent), key=lambda f: SEVERITY_ORDER[f.severity])
-            score, breakdown = score_agent(findings)
-            results.append(ScannedAgent(agent, findings, score, breakdown))
+            results.append(ScannedAgent(agent, findings, score_agent(agent, findings)))
     return results
+
+
+def provenance() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """What the tool takes from published sources, and what is our own judgement.
+
+    Thresholds are read from the code, so this list cannot drift from it.
+    """
+    published = [
+        ("Risk score formula, factor rubric, default multipliers and bands",
+         f"OWASP AIVSS v0.8 (2026), as written: threat multiplier {aivss.THREAT_MULTIPLIER} and "
+         f"mitigation factor {aivss.MITIGATION_FACTOR} are the spec's defaults. Tested against its worked examples."),
+        ("CVSS base score from a vector", "FIRST CVSS v4.0 specification, computed by the cvss library."),
+        ("Vendor key formats", f"gitleaks v8.30.1 default rules, copied unchanged ({len(load_rules())} rules used)."),
+        ("Framework catalogues", "OWASP Top 10 for LLM Applications 2026, MITRE ATLAS release 2026.09, NIST AI RMF functions."),
+        ("Policy proofs", "The Z3 solver searches every possible call, so a proof holds for the policy as written."),
+        ("Config field names", "Microsoft Copilot Studio agent inventory schema, AWS bedrock-agent API, each MCP client's documented format."),
+    ]
+    ours = [
+        ("Which checks exist, and each one's severity",
+         "Chosen to cover common agent risks: excessive agency, prompt injection, supply chain and exposed secrets."),
+        ("An agent's score is its highest finding's", "AIVSS scores single vulnerabilities; taking the worst follows common CVSS practice."),
+        ("CVSS metric values for each check", "One vector per check and severity, with a reason for its metrics (cvss_why in mappings.yaml)."),
+        ("Which config field gives which AIVSS factor value",
+         "Rules in aivss.py. A factor the config does not show is not guessed: it widens the score into a range (0.0 to 1.0)."),
+        ("Which framework IDs each check maps to", "One mapping per check, with a one-sentence reason (mappings.yaml)."),
+        ("Thresholds",
+         f"Instructions under {checks.MIN_INSTRUCTION_WORDS} words; topic overlap at TF-IDF similarity "
+         f"{checks.TOPIC_OVERLAP_THRESHOLD} or more; a value \"looks generated\" at {checks.MIN_GENERATED_LENGTH}+ characters "
+         f"with letters and digits and entropy {checks.MIN_GENERATED_ENTROPY}+ bits per character."),
+        ("Read and write words in tool names", "Word lists used when a platform gives no HTTP method. They fail closed: any write word means write."),
+        ("Fixture data and the YAML policy format", "Synthetic Copilot Studio and Bedrock values on real field names; the policy format is ours."),
+    ]
+    return published, ours
 
 
 def top_issues(results: list[ScannedAgent], n: int = 3) -> list[str]:
@@ -80,7 +112,7 @@ def top_issues(results: list[ScannedAgent], n: int = 3) -> list[str]:
         for check in {f.check_id for f in r.findings}:
             affected[check] = affected.get(check, 0) + 1
     # Most agents first; ties go to the heavier issue, then by name.
-    ranked = sorted(affected, key=lambda c: (-affected[c], -WEIGHTS[c], c))
+    ranked = sorted(affected, key=lambda c: (-affected[c], c))
     return [f"{affected[c]} of {len(results)} agents {SUMMARY_PHRASES[c]}." for c in ranked[:n]]
 
 
@@ -142,13 +174,14 @@ def build_report(
     return env.get_template("report.html").render(
         today=date.today().isoformat(),
         target=str(target),
-        results=sorted(results, key=lambda r: -r.score),
+        results=sorted(results, key=lambda r: -(r.risk.score or 0)),
         agents_with_findings=sum(bool(r.findings) for r in results),
         counts={s: sum(f.severity == s for f in all_findings) for s in SEVERITY_ORDER},
         total_findings=len(all_findings),
         top_issues=top_issues(results),
         mappings=load_mappings(),
         verifications=verifications,
+        provenance=provenance(),
         platforms=list(table),
         coverage_rows=coverage_rows,
         real_world=real_world_sections(github_dir, registry_dir),

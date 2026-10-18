@@ -1,6 +1,6 @@
 # Discover Lite
 
-Discover Lite is a small static analyser for AI agent configurations. It reads how agents and MCP clients are set up (their instructions, tools, knowledge sources and access settings) from local files, flags risky setups, explains each risk with a score breakdown and framework mappings, and proves properties of tool policies with a solver. Every check is a fixed, deterministic rule: there is no AI model inside the tool, and scanning never touches the network. It is a learning project modelled on the "Discover" capability at Outerlimit.
+Discover Lite is a small static analyser for AI agent configurations. It reads how agents and MCP clients are set up (their instructions, tools, knowledge sources and access settings) from local files, flags risky setups, scores each risk with OWASP AIVSS, maps it to security frameworks, and proves properties of tool policies with a solver. Every check is a fixed, deterministic rule: there is no AI model inside the tool, and scanning never touches the network. It is a learning project modelled on the "Discover" capability at Outerlimit.
 
 ## Quick start
 
@@ -8,7 +8,7 @@ Discover Lite is a small static analyser for AI agent configurations. It reads h
 python -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 
-.venv/bin/discover-lite scan fixtures/            # findings and a risk score per agent
+.venv/bin/discover-lite scan fixtures/            # findings and an AIVSS score per agent
 .venv/bin/discover-lite scan fixtures/ --json     # the same, with framework mappings
 .venv/bin/discover-lite verify fixtures/          # prove tool-policy properties with Z3
 .venv/bin/discover-lite coverage fixtures/        # which signals each platform gives
@@ -47,7 +47,7 @@ flowchart LR
     F[Config files<br>Copilot Studio, Bedrock,<br>MCP clients, MCP Registry] --> C[Connectors<br>translate only]
     C --> A[Agent model<br>None = platform does not say]
     A --> K[Checks<br>pure rules]
-    K --> S[Score<br>Shapley breakdown]
+    K --> S[Score<br>OWASP AIVSS v0.8]
     K --> M[Framework mappings<br>OWASP, NIST, ATLAS]
     A --> V[Verifier<br>Z3 over policy.yaml]
     A --> CV[Coverage matrix]
@@ -56,8 +56,8 @@ flowchart LR
 
 - **Connectors** (`src/discover_lite/connectors/`) turn each file into an `Agent`. They never judge.
 - **Checks** (`checks/__init__.py`) are pure functions `Agent -> list[Finding]`. A field that is `None` means "the platform does not say" and never fires a check.
-- **Scoring** (`scoring.py`) adds weights per failed check, a bonus for one dangerous pair, a cap of 100, and splits the score between checks with exact Shapley values so every point is explained.
-- **Verifier** (`verifier.py`) uses Z3 to search every possible tool call against a policy file and returns a counterexample when a property fails.
+- **Scoring** (`aivss.py`) applies OWASP AIVSS v0.8 to each security finding: the check's CVSS v4.0 base score, raised by ten agentic factors read from the config. See "Risk scores" below.
+- **Verifier** (`verifier.py`) uses Z3 to search every possible tool call against a policy file and returns a counterexample when a property fails. An agent with no policy file is listed as not verified, and `verify` exits with code 1 when nothing could be checked, so a missing policy never reads as a pass.
 
 ## Checks
 
@@ -79,6 +79,23 @@ Vendor key formats come from the default rules of [gitleaks](https://github.com/
 
 The full mappings, with a one-sentence reason for each, are in `src/discover_lite/mappings.yaml`. ATLAS techniques were checked against ATLAS release 2026.09; each is a technique the finding makes easier for an attacker.
 
+## Risk scores
+
+Scores follow [OWASP AIVSS v0.8](https://aivss.owasp.org/) (AI Vulnerability Scoring System), a published method for agentic AI. Nothing in the formula is ours:
+
+```
+AARS  = (10 - CVSS_Base) * (Factor_Sum / 10) * ThM
+AIVSS = RoundHalfUp((CVSS_Base + AARS) * Mitigation_Factor, 1)
+```
+
+- **CVSS_Base:** each check's CVSS v4.0 base vector is in `mappings.yaml`, with a one-line reason for its metrics, and the `cvss` library computes the score. Checks that report two severities have a vector for each. Quality checks have none: they are not vulnerabilities, so they are not scored.
+- **Factor_Sum:** ten agentic factors (Autonomy, Tools, Language, Context, Non-Determinism, Opacity, Persistence, Identity, Multi-Agent, Self-Mod), each 0.0, 0.5 or 1.0 by the spec's rubric, read from the config where it shows them. For example, a write tool with approval off is Autonomy 1.0, and a Bedrock guardrail makes Non-Determinism 0.5.
+- **ThM = 0.97 and Mitigation_Factor = 1.0:** the spec's defaults. A config cannot show exploit maturity or validated mitigations.
+- **A range, not a guess:** configs never show memory, logging, identity changes or other agents, and MCP configs do not list their servers' tools. Each score is therefore a range: the low end counts only what the config shows, the high end gives every unshown factor the worst value. Both ends are valid AIVSS scores, and the range closes as more of the agent becomes visible.
+- **An agent's score** is its highest finding's score. Bands are the spec's (and CVSS's): Low under 4.0, Medium to 6.9, High to 8.9, Critical from 9.0.
+
+The formula is tested against the eight worked examples in section 3.6 of the specification.
+
 ## What is real and what is modelled
 
 - **Real data:** 45,372 servers from the official MCP Registry and public MCP client configs from GitHub. Results are in `docs/registry-findings.md` and `docs/github-findings.md`. Only aggregate counts are reported; no repository is named and every secret is redacted.
@@ -93,4 +110,5 @@ The full mappings, with a one-sentence reason for each, are in `src/discover_lit
 - Tool capability comes from the HTTP method where available and otherwise from words in the tool's name. Unclear names are marked unknown, never assumed to be read-only.
 - Topic overlap compares words, not meaning: "locked" and "unlock" count as different words. The threshold (0.15) was tuned on a handful of examples.
 - The verifier proves properties of the **policy as written**. It does not prove that the agent, the model or the platform follows the policy.
-- The risk weights are judgement calls, not measured probabilities. The Shapley breakdown makes the arithmetic transparent; it does not make the weights correct.
+- The scoring method is published, but two inputs are still judgements: each check's CVSS v4.0 metric values (with reasons in `mappings.yaml`) and the factor rules in `aivss.py`. AIVSS itself is a v0.8 draft; its mitigation floor is described by the spec as provisional.
+- AIVSS raises low CVSS scores a lot in a highly agentic context (the spec's own example takes 2.1 to 7.1), so most agents with any finding score High or Critical at the top of the range.

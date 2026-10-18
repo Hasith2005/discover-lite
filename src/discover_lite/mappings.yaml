@@ -9,6 +9,9 @@
 # nist_ai_rmf: NIST AI Risk Management Framework functions (Govern, Map,
 #   Measure, Manage) that the finding feeds into.
 # category: "security", or "quality" for findings with no clean OWASP match.
+# cvss_v4: the CVSS v4.0 base vector for each severity the check reports, the
+#   baseline AIVSS needs (aivss.py). Quality checks have none: they are not
+#   vulnerabilities. cvss_why gives the reason for the metric values.
 
 secret_in_config:
   title: Secret written into a config file
@@ -16,6 +19,10 @@ secret_in_config:
   owasp_llm_2026: [LLM02]
   atlas: [AML.T0083, AML.T0055]  # Credentials from AI Agent Configuration; Unsecured Credentials
   nist_ai_rmf: [Measure, Manage]
+  cvss_v4:
+    high: CVSS:4.0/AV:L/AC:L/AT:N/PR:L/UI:N/VC:H/VI:N/VA:N/SC:H/SI:H/SA:L
+    low: CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:N/VC:L/VI:N/VA:N/SC:L/SI:L/SA:N
+  cvss_why: Anyone who can read the file (AV:L, PR:L) gets the key (VC:H), and the key opens the service behind it (SC:H, SI:H). Typed text (low) is usually a placeholder, so it may not work (AT:P) and gives little (L).
   why: Anyone who can read the file, or the repository it is committed to, can use the secret.
 
 unpinned_package:
@@ -24,6 +31,9 @@ unpinned_package:
   owasp_llm_2026: [LLM04]
   atlas: [AML.T0010.005, AML.T0109]  # AI Supply Chain Compromise: AI Agent Tool; AI Supply Chain Rug Pull
   nist_ai_rmf: [Map, Manage]
+  cvss_v4:
+    medium: CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:L/SI:L/SA:N
+  cvss_why: An attacker must first publish a bad release (AC:H, AT:P), which then runs as code on the agent's machine (VC:H, VI:H).
   why: A new or hijacked release of the package runs automatically the next time the agent starts.
 
 insecure_remote_server:
@@ -32,6 +42,10 @@ insecure_remote_server:
   owasp_llm_2026: [LLM02]
   atlas: [AML.T0132]  # Misconfigured or Publicly Exposed AI Services (ATLAS has no network-interception technique)
   nist_ai_rmf: [Measure, Manage]
+  cvss_v4:
+    high: CVSS:4.0/AV:A/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:L/SI:L/SA:N
+    low: CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N
+  cvss_why: Plain HTTP can be read and changed by anyone on the network path (AV:A, VC:H, VI:H). With no Authorization header the client may still use OAuth (AT:P, PR:L), so less is exposed (VC:L).
   why: Traffic and credentials can be read or changed on the network, or the server may accept anyone.
 
 missing_scope:
@@ -40,6 +54,9 @@ missing_scope:
   owasp_llm_2026: [LLM03]
   atlas: [AML.T0051.000, AML.T0054]  # LLM Prompt Injection: Direct; LLM Jailbreak
   nist_ai_rmf: [Govern, Map]
+  cvss_v4:
+    medium: CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N
+  cvss_why: A user of the agent (PR:L) still has to talk it past its purpose (AT:P); the agent's own limits are what is lost (VC:L, VI:L).
   why: Without stated limits, nothing tells the agent what it must refuse.
 
 no_human_in_loop:
@@ -48,6 +65,9 @@ no_human_in_loop:
   owasp_llm_2026: [LLM03]
   atlas: [AML.T0053, AML.T0086, AML.T0101]  # AI Agent Tool Invocation; Exfiltration and Data Destruction via it
   nist_ai_rmf: [Govern, Manage]
+  cvss_v4:
+    high: CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:N/VI:H/VA:L/SC:N/SI:H/SA:N
+  cvss_why: Once an instruction reaches the agent (AT:P, PR:L), the action runs with nobody checking, changing data here and in the systems the tool reaches (VI:H, SI:H).
   why: The agent can change data or send messages with no person checking first.
 
 open_access:
@@ -56,6 +76,10 @@ open_access:
   owasp_llm_2026: [LLM02]
   atlas: [AML.T0132]  # Misconfigured or Publicly Exposed AI Services
   nist_ai_rmf: [Govern, Manage]
+  cvss_v4:
+    high: CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:L/VA:N/SC:N/SI:N/SA:N
+    medium: CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N
+  cvss_why: With no authentication anyone can use the agent and its data (PR:N, VC:H). Shared with the whole organisation, a signed-in colleague is needed (PR:L) and less is exposed (VC:L).
   why: More people can reach the agent and the data behind it than need to.
 
 unclassified_tool:
@@ -72,6 +96,9 @@ prompt_injection_exposure:
   owasp_llm_2026: [LLM01]
   atlas: [AML.T0051.001, AML.T0053]  # LLM Prompt Injection: Indirect; AI Agent Tool Invocation
   nist_ai_rmf: [Map, Manage]
+  cvss_v4:
+    high: CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:N/SC:L/SI:L/SA:N
+  cvss_why: An attacker plants text on the web with no access (PR:N); it works when a user asks the agent to read it (UI:P, AT:P), and the agent then acts and reads for the attacker (VC:H, VI:H).
   why: Hidden instructions in web content can make the agent act for an attacker.
 
 topic_overlap:
@@ -88,6 +115,9 @@ broad_filesystem_access:
   owasp_llm_2026: [LLM03]
   atlas: [AML.T0037, AML.T0112.000]  # Data from Local System; Machine Compromise: Local AI Agent
   nist_ai_rmf: [Map, Manage]
+  cvss_v4:
+    medium: CVSS:4.0/AV:L/AC:L/AT:P/PR:N/UI:N/VC:H/VI:H/VA:L/SC:N/SI:N/SA:N
+  cvss_why: Files on the local machine (AV:L), reached once the agent is steered (AT:P), include keys and documents it can read and change (VC:H, VI:H).
   why: The agent can read and change far more files than its task needs, including keys and credentials.
 
 no_guardrail:
@@ -96,4 +126,7 @@ no_guardrail:
   owasp_llm_2026: [LLM01, LLM02]
   atlas: [AML.T0051, AML.T0054, AML.T0057]  # LLM Prompt Injection; LLM Jailbreak; LLM Data Leakage
   nist_ai_rmf: [Manage]
+  cvss_v4:
+    medium: CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N
+  cvss_why: A missing filter does not cause a breach alone (AT:P); it removes one layer that would stop some leaks and attacks (VC:L, VI:L).
   why: Nothing filters prompt attacks on the way in or sensitive data on the way out.

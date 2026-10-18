@@ -203,3 +203,8 @@ def test_cline_always_allow_becomes_unapproved_tools(tmp_path):
         Tool(name="read_file", capability="read", requires_approval=False),
         Tool(name="write_file", capability="write", requires_approval=False),
     ]
+
+
+def test_dot_file_config_is_named_after_its_folder():
+    # Every project's .mcp.json has the same name; its folder says which one.
+    assert load_any(Path(__file__).parent.parent / "fixtures" / "web-app" / ".mcp.json").name == "web-app/.mcp.json"

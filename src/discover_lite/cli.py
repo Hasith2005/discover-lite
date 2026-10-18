@@ -44,6 +44,20 @@ def _scan(target: Path):
     return results
 
 
+def _finding_score(risk, finding) -> dict:
+    """The AIVSS fields for one finding, or nothing for a quality finding."""
+    for s in risk.findings:
+        if s.finding is finding:
+            return {
+                "cvss_v4": s.vector,
+                "cvss_base": s.cvss_base,
+                "aars": round(s.aars, 4),
+                "aivss": s.score,
+                "aivss_low": s.low,
+            }
+    return {}
+
+
 @app.command()
 def scan(
     target: Path = TARGET,
@@ -62,10 +76,20 @@ def scan(
                 # Only identifying fields: the full agent includes env and
                 # header values, which may be secrets and must not be printed.
                 "agent": r.agent.model_dump(include={"id", "name", "platform", "source_file"}),
-                "score": r.score,
-                "score_breakdown": {check: round(points, 2) for check, points in r.breakdown.items()},
-                # Each finding plus the frameworks its check maps to.
-                "findings": [{**f.model_dump(), "mapping": mappings[f.check_id]} for f in r.findings],
+                # OWASP AIVSS v0.8: the agent's score, and the inputs behind it.
+                "aivss": {
+                    "score": r.risk.score,
+                    "low": r.risk.low,
+                    "band": r.risk.band,
+                    "factor_sum": r.risk.factor_sum,
+                    "factors": [vars(f) for f in r.risk.factors],
+                },
+                # Each finding, its AIVSS score if it is a security finding,
+                # and the frameworks its check maps to.
+                "findings": [
+                    {**f.model_dump(), **_finding_score(r.risk, f), "mapping": mappings[f.check_id]}
+                    for f in r.findings
+                ],
             }
             for r in results
         ]
@@ -76,11 +100,16 @@ def scan(
         typer.echo(f"Wrote {report_file}\n")
 
     for r in results:
-        typer.echo(f"{r.agent.name}  ({r.agent.platform}, {r.agent.source_file})  risk {r.score:.0f}/100")
+        typer.echo(f"{r.agent.name}  ({r.agent.platform}, {r.agent.source_file})  AIVSS: {r.risk.text}")
         if not r.findings:
             typer.echo("  No findings.")
+        if r.risk.score:
+            shown = sum(not f.assumed for f in r.risk.factors)
+            typer.echo(f"  agentic factors: {shown} of 10 shown in the config (sum {r.risk.shown_sum:g}), {10 - shown} not shown")
         for f in r.findings:
-            typer.echo(f"  [{f.severity.upper():6}] {f.check_id}: {f.evidence}")
+            scored = _finding_score(r.risk, f)
+            label = f"AIVSS {scored['aivss_low']:4}-{scored['aivss']:4}" if scored else f"{'quality':15}"
+            typer.echo(f"  [{f.severity.upper():6}] {label} {f.check_id}: {f.evidence}")
         typer.echo("")
 
     all_findings = [f for r in results for f in r.findings]
@@ -117,15 +146,24 @@ def verify_command(
 ) -> None:
     """Prove properties of each agent's tool policy with the Z3 solver."""
     policies = policies or default_policies(target)
-    for r in _scan(target):
+    results = _scan(target)
+    unverified = []
+    for r in results:
         path = policy_path(policies, r.agent)
         if not path.exists():
+            unverified.append(r.agent.name)
             continue
         typer.echo(f"{r.agent.name}  ({path})")
         for result in verify(r.agent, load_policy(path)):
             outcome = "PROVED  " if result.proved else "VIOLATED"
             typer.echo(f"  {outcome} {result.property}: {result.detail}")
         typer.echo("")
+    # No policy means nothing was checked, which must not look like a pass.
+    if unverified:
+        names = ", ".join(unverified) if len(unverified) <= 5 else f"{len(unverified)} agents"
+        typer.echo(f"No policy for {names}: not verified. Looked in {policies}/.")
+    if len(unverified) == len(results):
+        raise typer.Exit(1)
 
 
 @app.command("coverage")
