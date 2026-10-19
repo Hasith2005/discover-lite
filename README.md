@@ -2,7 +2,17 @@
 
 Discover Lite is a small static analyser for AI agent configurations. It reads how agents and MCP clients are set up (their instructions, tools, knowledge sources and access settings) from local files, flags risky setups, scores each risk with OWASP AIVSS, maps it to security frameworks, and proves properties of tool policies with a solver. Every check is a fixed, deterministic rule: there is no AI model inside the tool, and scanning never touches the network. It is a learning project modelled on the "Discover" capability at Outerlimit.
 
+## Headline results on real data
+
+Run over 2,009 public MCP client configs from GitHub and all 45,372 servers in the official MCP Registry (details in `docs/github-findings.md` and `docs/registry-findings.md`):
+
+- **93% of servers started with `npx` or `uvx` in real configs have no exact version**, and 30% ask for `@latest` by name, so every client start may download and run new code. In the registry the same rule finds almost none (22 of 15,695 packages): publishers pin, users do not.
+- **1.8% of configs (about 1 in 60) hold a real-looking credential**, matched by gitleaks' vendor key formats or by a generated-looking value under a secret name. Values are always redacted, and no key was ever tried.
+- **Plain HTTP is rare** (7 of 594 remote servers), but 67% of remote servers send no Authorization header, which is often fine because many sign in with OAuth instead.
+
 ## Quick start
+
+Needs Python 3.10 or later. All dependencies, including the Z3 solver, install as wheels from PyPI.
 
 ```bash
 python -m venv .venv
@@ -39,6 +49,30 @@ Real public data (the only commands that use the network):
 ```
 
 `--limit` sets how many items to download: for `fetch-registry`, entries (one per server version, default 0 = the whole registry, about 45,000 servers at 100 a page); for `fetch-github`, new config files (default 300, split evenly across the six clients). `--out` changes the folder.
+
+Downloaded data stays in `data/`, which is not committed. `stats` prints counts only, never values, names or repositories, and `review-secrets data/github-configs/` lists each secret hit with its value redacted so a person can judge it by eye before any rate is quoted.
+
+## Example output
+
+```
+$ discover-lite scan fixtures/copilot_refunds_bot.json
+Refunds Bot  (copilot_studio, fixtures/copilot_refunds_bot.json)  AIVSS: 7.9-9.3 (High-Critical)
+  agentic factors: 5 of 10 shown in the config (sum 3), 5 not shown
+  [HIGH  ] AIVSS  7.9- 9.3 no_human_in_loop: Tool 'IssueRefund' (write) runs without approval
+
+1 agent, 1 findings (1 high, 0 medium, 0 low)
+0 of 2 tools could not be classified as read or write
+```
+
+```
+$ discover-lite verify fixtures/copilot_refunds_bot.json
+Refunds Bot  (fixtures/policies/copilot_refunds_bot.yaml)
+  VIOLATED Every allowed write needs approval: counterexample: IssueRefund(amount=4, approved=False) is allowed
+  VIOLATED No contradictory rules: counterexample: IssueRefund(amount=5000) matches both an allow and a deny rule
+  PROVED   Every tool is covered: every tool has a rule
+```
+
+Across all fixtures, `scan fixtures/` reports 12 agents and 20 findings (7 high, 10 medium, 3 low).
 
 ## How it fits together
 
@@ -96,10 +130,81 @@ AIVSS = RoundHalfUp((CVSS_Base + AARS) * Mitigation_Factor, 1)
 
 The formula is tested against the eight worked examples in section 3.6 of the specification.
 
+## Tool policies and the verifier
+
+A policy is a short YAML file of rules saying when each tool may run. It lives in a `policies/` folder beside the configs, named after the config file (`copilot_refunds_bot.json` uses `policies/copilot_refunds_bot.yaml`):
+
+```yaml
+rules:
+  - tool: LookupOrder
+    effect: allow
+  - tool: IssueRefund
+    effect: allow
+    when: {amount_max: 100}     # optional amount_min / amount_max, inclusive
+    require_approval: false
+  - tool: IssueRefund
+    effect: allow
+    when: {amount_min: 101}
+    require_approval: true
+  - tool: IssueRefund
+    effect: deny                # deny always wins over allow
+    when: {amount_min: 5000}
+```
+
+The verifier models one tool call as two unknowns, an integer `amount` (0 or more) and a yes/no `approved`, and asks Z3 whether any call breaks each property. Z3 reasons over every integer at once, so "proved" means true for all amounts, not for the ones a test happened to try, and "violated" comes with a concrete call that breaks the rule:
+
+1. **Every allowed write needs approval.** No call to a write or execute tool is allowed without approval. Above, any refund from 0 to 100 skips approval; Z3 reports one such amount.
+2. **No contradictory rules.** No call matches both an allow and a deny rule for the same tool. Above, every refund from 5,000 upwards matches both. Deny wins here, but the meaning then depends on how a platform resolves conflicts; `amount_max: 4999` on the second allow rule removes the overlap.
+3. **Every tool is covered.** Every tool the connector found has at least one rule. This is a set difference and needs no solver.
+
+The policy format is our own: no platform exports policies in this shape. It shows what a solver adds once a platform's real permission rules are translated into constraints.
+
+## HTML report
+
+`discover-lite report <target> -o report.html` writes one self-contained page with:
+
+- an estate summary: counts by severity and the most common issues across all agents;
+- agents ranked by AIVSS score, each with its agentic factors and scored findings (CVSS vector included);
+- every finding with its OWASP, ATLAS and NIST mappings and the reason for each;
+- the verifier's results for each agent that has a policy file;
+- the coverage matrix: which signals each platform's files actually contain;
+- the real-data statistics, when `data/github-configs/` or `data/registry/` exist;
+- a "Where each part comes from" table separating published methods and rule sets from our own judgement calls, such as thresholds.
+
+## Project layout
+
+```
+src/discover_lite/
+  models.py            Agent, Tool, McpServer and Finding (pydantic)
+  connectors/          one read-only parser per format: Copilot Studio, Bedrock,
+                       MCP client configs, MCP Registry pages
+  checks/__init__.py   the posture checks, registered in ALL_CHECKS
+  secret_rules.py      gitleaks' vendor key rules and an entropy measure
+  rules/               gitleaks' default rules, unchanged, with their licence
+  mappings.yaml        OWASP, ATLAS, NIST and CVSS v4.0 for each check
+  aivss.py             OWASP AIVSS v0.8 scoring
+  verifier.py          Z3 policy verification
+  coverage.py          which Agent fields each platform fills in
+  report.py            scanning and the HTML report (templates/report.html)
+  fetch_github.py      download public client configs (gh CLI)
+  fetch_registry.py    download the MCP Registry
+  stats.py             aggregate statistics over downloaded data
+  cli.py               the Typer command line
+fixtures/              synthetic configs and policies used in the examples and tests
+tests/                 pytest, 281 tests
+docs/                  findings on real data and the coverage write-up
+```
+
+## Adding a check or a connector
+
+- **A check** is a function `Agent -> list[Finding]` in `checks/__init__.py`, added to `ALL_CHECKS`, with an entry in `mappings.yaml` (frameworks, plus CVSS vectors if it is a security check) and at least one test that fires and one that does not. It must not fire on `None`.
+- **A connector** turns one file format into an `Agent` and is registered in `connectors/__init__.py`. It translates only: fields the platform does not expose stay `None` rather than being guessed, and the coverage matrix then shows them as missing.
+
 ## What is real and what is modelled
 
 - **Real data:** 45,372 servers from the official MCP Registry and public MCP client configs from GitHub. Results are in `docs/registry-findings.md` and `docs/github-findings.md`. Only aggregate counts are reported; no repository is named and every secret is redacted.
-- **Real field names, synthetic values:** the Copilot Studio and Bedrock fixtures. Copilot Studio fields follow Microsoft's agent inventory schema; `instructions`, `topics` and each operation's `method` are our own additions. Bedrock fields follow the `bedrock-agent` API (`GetAgent`, `GetAgentActionGroup`); bundling the responses into one file is our choice.
+- **Real field names, synthetic values:** the Copilot Studio and Bedrock fixtures. Copilot Studio fields follow Microsoft's [agent inventory schema](https://learn.microsoft.com/microsoft-copilot-studio/admin-agent-inventory) (`authentication`, `sharedWithViewers.entireTenant`, `IsWebSearchEnabledForKnowledge`, `powerPlatformConnectors[].operations[]` with `usedAs` and `requiresEndUserConsent`). `instructions` and `topics` are our own additions, and so is `method` on each operation: in the real inventory the HTTP method sits on the separate connector records and would need a join. Bedrock fields follow the `bedrock-agent` API (`GetAgent`, `GetAgentActionGroup`); bundling the responses into one file is our choice.
+- **Real formats, synthetic values:** the MCP client fixtures. `fixtures/vscode/mcp.json` follows VS Code's format (`servers`, `inputs`, `${input:...}`) and `fixtures/web-app/.mcp.json` follows Claude Code's. The Claude Desktop fixture also lists two remote servers to exercise the transport checks; Claude Desktop itself adds remote servers through its Connectors settings rather than this file.
 - **Our own format:** the tool policy files in `fixtures/policies/`.
 
 `docs/coverage.md` sets out what each platform exposes, what is missing, and the one signal I would most want from each.
@@ -112,3 +217,9 @@ The formula is tested against the eight worked examples in section 3.6 of the sp
 - The verifier proves properties of the **policy as written**. It does not prove that the agent, the model or the platform follows the policy.
 - The scoring method is published, but two inputs are still judgements: each check's CVSS v4.0 metric values (with reasons in `mappings.yaml`) and the factor rules in `aivss.py`. AIVSS itself is a v0.8 draft; its mitigation floor is described by the spec as provisional.
 - AIVSS raises low CVSS scores a lot in a highly agentic context (the spec's own example takes 2.1 to 7.1), so most agents with any finding score High or Critical at the top of the range.
+- The checks detect concrete settings; the frameworks describe categories of risk, not configuration rules. Mapping a check to a framework entry is therefore a judgement, recorded with its reason in `mappings.yaml`. The NIST AI RMF tags are the coarsest: the framework has only four functions.
+- `missing_scope`'s 10-word threshold is our own choice, not taken from any standard.
+
+## Licence
+
+MIT, see `LICENSE`. The gitleaks rules in `src/discover_lite/rules/` keep their own MIT licence (`LICENSE-gitleaks`).
