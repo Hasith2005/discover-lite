@@ -1,0 +1,53 @@
+{
+  "object": "agent",
+  "id": "support-agent",
+  "name": "support-agent",
+  "versions": {
+    "latest": {
+      "metadata": {},
+      "object": "agent.version",
+      "id": "support-agent:3",
+      "name": "support-agent",
+      "version": "3",
+      "description": "Answers customer questions and handles support tickets",
+      "created_at": 1789804800,
+      "definition": {
+        "kind": "prompt",
+        "model": "gpt-4.1",
+        "instructions": "You help customers with questions about their orders. Search the web for product information when the catalogue has no answer. Close a ticket only when the customer confirms the problem is solved.",
+        "tools": [
+          {
+            "type": "web_search"
+          },
+          {
+            "type": "mcp",
+            "server_label": "tickets",
+            "server_url": "https://tickets.example.com/mcp",
+            "require_approval": "never",
+            "allowed_tools": ["search_tickets", "close_ticket"],
+            "project_connection_id": "tickets-conn"
+          },
+          {
+            "type": "openapi",
+            "openapi": {
+              "name": "orders_api",
+              "description": "Look up orders and issue refunds.",
+              "auth": {"type": "anonymous"},
+              "spec": {
+                "openapi": "3.0.0",
+                "info": {"title": "Orders API", "version": "1.0.0"},
+                "paths": {
+                  "/orders/{orderId}": {"get": {"operationId": "getOrder", "description": "Get an order."}},
+                  "/refunds": {"post": {"operationId": "createRefund", "description": "Refund an order."}}
+                }
+              }
+            }
+          },
+          {
+            "type": "code_interpreter"
+          }
+        ]
+      }
+    }
+  }
+}

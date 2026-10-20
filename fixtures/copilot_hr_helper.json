@@ -2,7 +2,6 @@
   "type": "microsoft.copilotstudio/agents",
   "properties": {
     "displayName": "HR Helper",
-    "instructions": "Help employees.",
     "authentication": "None",
     "sharedWithViewers": {
       "entireTenant": true
@@ -10,21 +9,42 @@
     "IsWebSearchEnabledForKnowledge": true,
     "powerPlatformConnectors": [
       {
+        "connectorId": "shared_office365",
         "operations": [
-          {"operationId": "SendEmailV2", "method": "POST", "usedAs": "Tool", "requiresEndUserConsent": false},
-          {"operationId": "GetMyProfile", "method": "GET", "usedAs": "Topic Tool"},
-          {"operationId": "EscalateCase", "usedAs": "Tool", "requiresEndUserConsent": false}
+          {
+            "operationId": "SendEmailV2",
+            "usedAs": "Tool",
+            "requiresEndUserConsent": false
+          }
+        ]
+      },
+      {
+        "connectorId": "shared_office365users",
+        "operations": [
+          {
+            "operationId": "MyProfile_V2",
+            "usedAs": "Topic Tool"
+          }
         ]
       },
       {
         "operations": [
-          {"operationId": "GetFileContent", "usedAs": "Knowledge"}
+          {
+            "operationId": "EscalateCase",
+            "usedAs": "Tool",
+            "requiresEndUserConsent": false
+          }
+        ]
+      },
+      {
+        "connectorId": "shared_sharepointonline",
+        "operations": [
+          {
+            "operationId": "GetFileContent",
+            "usedAs": "Knowledge"
+          }
         ]
       }
-    ],
-    "topics": {
-      "reset_password": ["reset my password", "I forgot my password", "change my password"],
-      "unlock_account": ["unlock my account", "my account is locked", "locked out after too many password attempts"]
-    }
+    ]
   }
 }

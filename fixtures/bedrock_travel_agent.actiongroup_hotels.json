@@ -1,0 +1,17 @@
+{
+  "agentActionGroup": {
+    "actionGroupId": "TRAVELAG02",
+    "actionGroupName": "hotels",
+    "agentId": "TRAVEL0001",
+    "agentVersion": "DRAFT",
+    "createdAt": "2026-09-14T10:05:00Z",
+    "updatedAt": "2026-09-30T16:20:00Z",
+    "actionGroupState": "ENABLED",
+    "actionGroupExecutor": {
+      "lambda": "arn:aws:lambda:eu-west-2:111122223333:function:hotels"
+    },
+    "apiSchema": {
+      "payload": "{\"openapi\": \"3.0.0\", \"info\": {\"title\": \"Hotels API\", \"version\": \"1.0.0\"}, \"paths\": {\"/hotels\": {\"get\": {\"operationId\": \"searchHotels\", \"description\": \"Search hotels in a city.\"}}, \"/hotels/{hotelId}/reservations\": {\"post\": {\"operationId\": \"reserveHotel\", \"description\": \"Reserve a room.\"}}}}"
+    }
+  }
+}

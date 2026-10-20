@@ -100,7 +100,7 @@ def provenance() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
          f"{checks.TOPIC_OVERLAP_THRESHOLD} or more; a value \"looks generated\" at {checks.MIN_GENERATED_LENGTH}+ characters "
          f"with letters and digits and entropy {checks.MIN_GENERATED_ENTROPY}+ bits per character."),
         ("Read and write words in tool names", "Word lists used when a platform gives no HTTP method. They fail closed: any write word means write."),
-        ("Fixture data and the YAML policy format", "Synthetic Copilot Studio and Bedrock values on real field names; the policy format is ours."),
+        ("Fixture data and the YAML policy format", "Synthetic Copilot Studio, Bedrock and Foundry values in the platforms' real field names and response shapes; the policy format is ours."),
     ]
     return published, ours
 

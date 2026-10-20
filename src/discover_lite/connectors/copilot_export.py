@@ -1,8 +1,9 @@
-"""Connector for a synthetic Copilot Studio-style agent export.
+"""Connector for a Copilot Studio agent record from the Power Platform inventory.
 
-Field names follow Microsoft's Copilot Studio agent inventory schema.
-`instructions`, `topics` and each operation's `method` are our own additions
-to the format.
+Every field read here is in Microsoft's Copilot Studio agent inventory schema
+(learn.microsoft.com/microsoft-copilot-studio/admin-agent-inventory); nothing
+is our own. The inventory does not include the agent's instructions, its
+topics or what each connector operation does, so those stay unknown.
 This connector only reads JSON.
 """
 
@@ -30,9 +31,10 @@ READ_WORDS = {
     "view", "show", "retrieve", "download", "describe", "count", "browse",
 }
 
-# HTTP methods from a connector's OpenAPI definition. These describe what the
-# operation does, so they are a better signal than its name. An API can still
-# misuse them (a GET that deletes), so a write word in the name still wins.
+# HTTP methods from an OpenAPI definition (Bedrock and Foundry tools include
+# one). These describe what the operation does, so they are a better signal
+# than its name. An API can still misuse them (a GET that deletes), so a write
+# word in the name still wins.
 METHOD_CAPABILITY = {
     "GET": "read", "HEAD": "read",
     "POST": "write", "PUT": "write", "PATCH": "write", "DELETE": "write",
@@ -78,7 +80,7 @@ def infer_capability(operation_id: str) -> str:
 
 
 def classify(operation_id: str, method: str | None) -> str:
-    """Combine the HTTP method (if the export has one) with the name heuristic.
+    """Combine the HTTP method (if the platform gives one) with the name heuristic.
 
     Fails closed: if either source says "write", the answer is "write".
     Otherwise either source saying "read" is enough. A method we do not know,
@@ -105,7 +107,9 @@ def parse(data: dict, path: Path) -> Agent:
             tools.append(
                 Tool(
                     name=op["operationId"],
-                    capability=classify(op["operationId"], op.get("method")),
+                    # The inventory names operations but does not say what
+                    # they do, so only the name heuristic can judge them.
+                    capability=infer_capability(op["operationId"]),
                     # Missing key stays None: the export does not say.
                     requires_approval=op.get("requiresEndUserConsent"),
                 )
@@ -116,12 +120,10 @@ def parse(data: dict, path: Path) -> Agent:
         name=props.get("displayName", path.stem),
         platform="copilot_studio",
         source_file=str(path),
-        instructions=props.get("instructions"),
         tools=tools,
         # Web search is the only untrusted knowledge source the export reveals.
         untrusted_knowledge=props.get("IsWebSearchEnabledForKnowledge"),
         # Kept as the platform's own string, e.g. "None" or "Microsoft Entra".
         authentication=props.get("authentication"),
         shared_org_wide=props.get("sharedWithViewers", {}).get("entireTenant"),
-        topics=props.get("topics", {}),
     )

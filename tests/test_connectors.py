@@ -28,12 +28,6 @@ def test_mcp_config_fixture():
                 command="npx",
                 args=["-y", "@modelcontextprotocol/server-filesystem@0.6.2", "/home/demo/projects"],
             ),
-            McpServer(
-                name="tickets",
-                url="https://tickets.example.com/mcp",
-                headers={"Authorization": "Bearer ${TICKETS_TOKEN}"},
-            ),
-            McpServer(name="legacy-wiki", url="http://wiki.example.com/mcp"),
         ],
     )
 
@@ -45,26 +39,19 @@ def test_copilot_export_fixture():
         name="HR Helper",
         platform="copilot_studio",
         source_file=str(path),
-        instructions="Help employees.",
+        # The inventory holds no instructions or topics, so they stay unset.
         # GetFileContent is usedAs Knowledge, so it is not a tool.
         tools=[
             Tool(name="SendEmailV2", capability="write", requires_approval=False),
             # No requiresEndUserConsent key, so approval stays None.
-            Tool(name="GetMyProfile", capability="read", requires_approval=None),
+            # "My" and "Profile" are in neither word list.
+            Tool(name="MyProfile_V2", capability="unknown", requires_approval=None),
             # "Escalate" is in neither word list.
             Tool(name="EscalateCase", capability="unknown", requires_approval=False),
         ],
         untrusted_knowledge=True,
         authentication="None",
         shared_org_wide=True,
-        topics={
-            "reset_password": ["reset my password", "I forgot my password", "change my password"],
-            "unlock_account": [
-                "unlock my account",
-                "my account is locked",
-                "locked out after too many password attempts",
-            ],
-        },
     )
 
 
@@ -208,3 +195,93 @@ def test_cline_always_allow_becomes_unapproved_tools(tmp_path):
 def test_dot_file_config_is_named_after_its_folder():
     # Every project's .mcp.json has the same name; its folder says which one.
     assert load_any(Path(__file__).parent.parent / "fixtures" / "web-app" / ".mcp.json").name == "web-app/.mcp.json"
+
+
+def test_foundry_agent_object_fixture():
+    # A saved "get agent" response: the newest version sits under versions.latest.
+    agent = load_any(FIXTURES / "foundry_support_agent.json")
+    assert agent.platform == "foundry_agent"
+    assert agent.name == "support-agent"
+    assert agent.servers == [McpServer(name="tickets", url="https://tickets.example.com/mcp")]
+    # web_search is untrusted content; without rai_config the definition does
+    # not say whether a filter applies (the model deployment may have one).
+    assert agent.untrusted_knowledge is True
+    assert agent.guardrail is None
+    assert agent.authentication is None and agent.shared_org_wide is None
+    tools = {t.name: (t.capability, t.requires_approval) for t in agent.tools}
+    assert tools == {
+        # MCP tools with require_approval "never".
+        "search_tickets": ("read", False),
+        "close_ticket": ("write", False),
+        # From the OpenAPI spec: the HTTP method decides.
+        "getOrder": ("read", None),
+        "createRefund": ("write", None),
+        "code_interpreter": ("execute", None),
+    }
+
+
+def test_foundry_agent_version_fixture():
+    # A saved "get agent version" response.
+    agent = load_any(FIXTURES / "foundry_research_agent.json")
+    assert agent.name == "research-agent"
+    assert agent.instructions == "Answer research questions."
+    assert agent.guardrail is True
+    # file_search is a data source, not an action, and is not untrusted web content.
+    assert agent.untrusted_knowledge is None
+    tools = {t.name: (t.capability, t.requires_approval) for t in agent.tools}
+    assert tools == {
+        # No require_approval: Foundry's documented default is "always".
+        "read_wiki_page": ("read", True),
+        "update_wiki_page": ("write", True),
+        # Function tools run in the caller's code, which decides on approval.
+        "save_summary": ("write", None),
+    }
+
+
+def test_foundry_per_tool_approval(tmp_path):
+    mcp = {
+        "type": "mcp",
+        "server_label": "crm",
+        "server_url": "https://crm.example.com/mcp",
+        "require_approval": {"always": {"tool_names": ["delete_contact"]}, "never": {"tool_names": ["list_contacts"]}},
+        "allowed_tools": ["list_contacts", "delete_contact", "update_contact"],
+    }
+    version = {"object": "agent.version", "name": "crm", "definition": {"kind": "prompt", "model": "m", "tools": [mcp]}}
+    agent = _parse(tmp_path, version)
+    tools = {t.name: t.requires_approval for t in agent.tools}
+    # A tool in neither list is not documented, so it stays None.
+    assert tools == {"list_contacts": False, "delete_contact": True, "update_contact": None}
+
+
+def test_foundry_mcp_without_named_tools_adds_no_tools(tmp_path):
+    # The server's tools are not in the definition; we never connect to find them.
+    mcp = {"type": "mcp", "server_label": "s", "server_url": "https://s.example.com/mcp", "require_approval": "never"}
+    version = {"object": "agent.version", "name": "a", "definition": {"kind": "hosted", "tools": [mcp]}}
+    agent = _parse(tmp_path, version)
+    assert agent.tools == [] and len(agent.servers) == 1
+    assert agent.instructions is None
+
+
+def test_foundry_mcp_server_without_header_is_not_flagged():
+    from discover_lite.checks import insecure_remote_server
+
+    # Auth lives in the project connection, so a missing header says nothing.
+    assert insecure_remote_server(load_any(FIXTURES / "foundry_support_agent.json")) == []
+
+
+def test_bedrock_action_groups_match_on_agent_id_and_version(tmp_path):
+    import json
+
+    agent = {"agent": {"agentId": "AGENT00001", "agentName": "A", "agentVersion": "DRAFT"}}
+    (tmp_path / "agent.json").write_text(json.dumps(agent))
+
+    def group(name, agent_id, version):
+        functions = {"functions": [{"name": name, "requireConfirmation": "DISABLED"}]}
+        return {"agentActionGroup": {"actionGroupName": name, "agentId": agent_id, "agentVersion": version,
+                                     "actionGroupState": "ENABLED", "functionSchema": functions}}
+
+    (tmp_path / "mine.json").write_text(json.dumps(group("mine", "AGENT00001", "DRAFT")))
+    # Another agent's group, and an older version of this agent's: both ignored.
+    (tmp_path / "other.json").write_text(json.dumps(group("other", "AGENT00002", "DRAFT")))
+    (tmp_path / "old.json").write_text(json.dumps(group("old", "AGENT00001", "1")))
+    assert [t.name for t in load_any(tmp_path / "agent.json").tools] == ["mine"]

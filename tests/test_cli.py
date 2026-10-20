@@ -40,7 +40,7 @@ def test_report_and_verify_accept_one_file(tmp_path):
 
 def test_unrecognised_file_is_an_error(tmp_path):
     # A shape no connector knows (here, made up) must not look like a clean result.
-    unknown = tmp_path / "foundry_agent.json"
+    unknown = tmp_path / "unknown_agent.json"
     unknown.write_text('{"name": "agent", "kind": "prompt"}')
     result = run("scan", unknown)
     assert result.exit_code == 1
@@ -54,3 +54,9 @@ def test_verify_without_any_policy_fails(tmp_path):
     result = run("verify", config)
     assert result.exit_code == 1
     assert "not verified" in result.output
+
+
+def test_bedrock_action_group_alone_says_to_scan_its_agent():
+    result = run("scan", FIXTURES / "bedrock_travel_agent.actiongroup_flights.json")
+    assert result.exit_code == 1
+    assert "read together with its agent" in result.output

@@ -1,0 +1,32 @@
+{
+  "agentActionGroup": {
+    "actionGroupId": "TRAVELAG01",
+    "actionGroupName": "flights",
+    "agentId": "TRAVEL0001",
+    "agentVersion": "DRAFT",
+    "createdAt": "2026-09-14T10:05:00Z",
+    "updatedAt": "2026-09-30T16:20:00Z",
+    "actionGroupState": "ENABLED",
+    "actionGroupExecutor": {
+      "lambda": "arn:aws:lambda:eu-west-2:111122223333:function:flights"
+    },
+    "functionSchema": {
+      "functions": [
+        {
+          "name": "search_flights",
+          "description": "Find flights between two airports."
+        },
+        {
+          "name": "book_flight",
+          "description": "Book a flight.",
+          "requireConfirmation": "ENABLED"
+        },
+        {
+          "name": "cancel_booking",
+          "description": "Cancel a booking.",
+          "requireConfirmation": "DISABLED"
+        }
+      ]
+    }
+  }
+}

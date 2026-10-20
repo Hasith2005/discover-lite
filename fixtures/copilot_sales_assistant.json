@@ -2,20 +2,20 @@
   "type": "microsoft.copilotstudio/agents",
   "properties": {
     "displayName": "Sales Assistant",
-    "instructions": "You answer questions from the sales team about products, pricing and discounts. Use only the approved price list and never promise a discount above ten percent.",
     "authentication": "Microsoft Entra",
-    "sharedWithViewers": {"entireTenant": true},
+    "sharedWithViewers": {
+      "entireTenant": true
+    },
     "IsWebSearchEnabledForKnowledge": false,
     "powerPlatformConnectors": [
       {
         "operations": [
-          {"operationId": "GetPriceList", "method": "GET", "usedAs": "Tool"}
+          {
+            "operationId": "GetPriceList",
+            "usedAs": "Tool"
+          }
         ]
       }
-    ],
-    "topics": {
-      "quote_request": ["get a price quote", "how much does the enterprise plan cost", "quote for enterprise pricing"],
-      "pricing_question": ["what is the price", "enterprise plan pricing", "product cost"]
-    }
+    ]
   }
 }

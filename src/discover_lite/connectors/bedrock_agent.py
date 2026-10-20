@@ -1,12 +1,15 @@
 """Connector for an AWS Bedrock agent, as returned by the bedrock-agent API.
 
-The real API needs several read-only calls per agent: GetAgent, then
-ListAgentActionGroups and GetAgentActionGroup for each action group. Our file
-bundles their responses, which is our own choice of format:
+Each file is one saved response from a read-only call, unchanged:
 
-    {"agent": <GetAgent "agent">, "actionGroups": [<GetAgentActionGroup "agentActionGroup">, ...]}
+    GetAgent             -> {"agent": {...}}
+    GetAgentActionGroup  -> {"agentActionGroup": {...}}
 
-Field names inside each part are AWS's own. This connector only reads JSON.
+The agent file is the one that becomes an Agent. Its action groups are the
+GetAgentActionGroup responses in the same folder whose agentId and
+agentVersion match the agent's, so file names do not matter. Every field
+read here is in the Bedrock API reference; nothing is our own.
+This connector only reads JSON.
 """
 
 import json
@@ -23,12 +26,36 @@ OPENAPI_METHODS = {"get", "head", "post", "put", "patch", "delete"}
 
 
 def matches(data: object) -> bool:
-    """True if the parsed JSON looks like our bundle of Bedrock agent responses."""
+    """True if the parsed JSON is a saved GetAgent response."""
     return (
         isinstance(data, dict)
         and isinstance(data.get("agent"), dict)
         and "agentId" in data["agent"]
     )
+
+
+def action_group(data: object) -> dict | None:
+    """The action group in a saved GetAgentActionGroup response, or None."""
+    if isinstance(data, dict) and isinstance(data.get("agentActionGroup"), dict):
+        return data["agentActionGroup"]
+    return None
+
+
+def _action_groups(agent: dict, folder: Path) -> list[dict]:
+    """The agent's action groups, from GetAgentActionGroup responses beside it."""
+    groups = []
+    for path in sorted(folder.glob("*.json")):
+        try:
+            group = action_group(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if (
+            group is not None
+            and group.get("agentId") == agent["agentId"]
+            and group.get("agentVersion") == agent.get("agentVersion")
+        ):
+            groups.append(group)
+    return groups
 
 
 def _confirmation(value: object) -> bool | None:
@@ -37,15 +64,20 @@ def _confirmation(value: object) -> bool | None:
 
 
 def _openapi_tools(payload: str) -> list[Tool]:
-    """One tool per operation in an inline OpenAPI schema (JSON only).
-
-    The HTTP method says what each operation does, so here the capability
-    comes from the method, with the name as a fail-closed second opinion.
-    """
+    """One tool per operation in an inline OpenAPI schema (JSON only)."""
     try:
         spec = json.loads(payload)
     except json.JSONDecodeError:
         return []  # A YAML schema, or not a schema at all: nothing we can read.
+    return openapi_tools(spec)
+
+
+def openapi_tools(spec: dict) -> list[Tool]:
+    """One tool per operation in a parsed OpenAPI document.
+
+    The HTTP method says what each operation does, so here the capability
+    comes from the method, with the name as a fail-closed second opinion.
+    """
     tools = []
     for path, operations in spec.get("paths", {}).items():
         for method, operation in operations.items():
@@ -67,7 +99,7 @@ def parse(data: dict, path: Path) -> Agent:
     agent = data["agent"]
 
     tools = []
-    for group in data.get("actionGroups", []):
+    for group in _action_groups(agent, path.parent):
         # A disabled action group cannot be called, so it adds no tools.
         if group.get("actionGroupState") == "DISABLED":
             continue

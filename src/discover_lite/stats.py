@@ -15,7 +15,7 @@ from discover_lite.checks import (
     secret_in_config,
     unpinned_package,
 )
-from discover_lite.connectors import load_agents
+from discover_lite.connectors import bedrock_agent, load_agents, read_json
 from discover_lite.models import Agent, McpServer
 
 
@@ -48,7 +48,8 @@ def collect(folder: Path) -> tuple[list[Agent], int]:
     agents, skipped = [], 0
     for path in sorted(folder.rglob("*.json")):
         found = load_agents(path)
-        if not found:
+        # A Bedrock action group is read with its agent, so it is not skipped.
+        if not found and bedrock_agent.action_group(read_json(path)) is None:
             skipped += 1
         agents.extend(found)
     return agents, skipped

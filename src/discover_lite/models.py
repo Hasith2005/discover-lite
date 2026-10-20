@@ -47,7 +47,7 @@ class Agent(BaseModel):
 
     id: str
     name: str
-    platform: Literal["mcp_client", "copilot_studio", "mcp_registry", "bedrock_agent"]
+    platform: Literal["mcp_client", "copilot_studio", "mcp_registry", "bedrock_agent", "foundry_agent"]
     source_file: str
     instructions: str | None = None
     tools: list[Tool] = []

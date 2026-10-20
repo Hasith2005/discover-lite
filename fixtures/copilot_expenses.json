@@ -2,21 +2,25 @@
   "type": "microsoft.copilotstudio/agents",
   "properties": {
     "displayName": "Expenses Assistant",
-    "instructions": "You help employees submit expense claims and check their status. Every claim needs a receipt and manager approval. Do not discuss other employees' claims.",
     "authentication": "Microsoft Entra",
-    "sharedWithViewers": {"entireTenant": false},
+    "sharedWithViewers": {
+      "entireTenant": false
+    },
     "IsWebSearchEnabledForKnowledge": false,
     "powerPlatformConnectors": [
       {
         "operations": [
-          {"operationId": "GetClaimStatus", "method": "GET", "usedAs": "Tool"},
-          {"operationId": "SubmitExpense", "method": "POST", "usedAs": "Tool", "requiresEndUserConsent": true}
+          {
+            "operationId": "GetClaimStatus",
+            "usedAs": "Tool"
+          },
+          {
+            "operationId": "SubmitExpense",
+            "usedAs": "Tool",
+            "requiresEndUserConsent": true
+          }
         ]
       }
-    ],
-    "topics": {
-      "submit_claim": ["submit an expense claim", "claim travel costs"],
-      "claim_status": ["has my reimbursement been paid", "where is my money"]
-    }
+    ]
   }
 }

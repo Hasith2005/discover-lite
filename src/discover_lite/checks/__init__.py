@@ -276,9 +276,10 @@ def insecure_remote_server(agent: Agent) -> list[Finding]:
                     recommendation="Use https:// so traffic and credentials are encrypted.",
                 )
             )
-        # The registry does not record auth details, so a missing header there
-        # means "does not say", not "no authentication".
-        if agent.platform == "mcp_registry":
+        # The registry does not record auth details, and Foundry keeps them in
+        # a project connection the agent only names (project_connection_id),
+        # so a missing header there means "does not say", not "no authentication".
+        if agent.platform in ("mcp_registry", "foundry_agent"):
             continue
         # Header names are case-insensitive in HTTP.
         if not any(name.lower() == "authorization" for name in server.headers):

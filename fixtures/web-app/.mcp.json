@@ -2,13 +2,31 @@
   "mcpServers": {
     "github": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github@2025.4.8"],
-      "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"}
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github@2025.4.8"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
     },
     "docs-search": {
       "type": "http",
       "url": "https://docs-search.example.com/mcp",
-      "headers": {"Authorization": "Bearer ${DOCS_SEARCH_TOKEN}"}
+      "headers": {
+        "Authorization": "Bearer ${DOCS_SEARCH_TOKEN}"
+      }
+    },
+    "tickets": {
+      "type": "http",
+      "url": "https://tickets.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${TICKETS_TOKEN}"
+      }
+    },
+    "legacy-wiki": {
+      "type": "http",
+      "url": "http://wiki.example.com/mcp"
     }
   }
 }

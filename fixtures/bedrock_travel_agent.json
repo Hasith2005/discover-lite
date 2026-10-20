@@ -3,62 +3,13 @@
     "agentId": "TRAVEL0001",
     "agentName": "Travel Booker",
     "agentArn": "arn:aws:bedrock:eu-west-2:111122223333:agent/TRAVEL0001",
+    "agentVersion": "DRAFT",
     "agentStatus": "PREPARED",
-    "foundationModel": "anthropic.claude-sonnet-4-5",
-    "instruction": "You are a travel assistant. Help employees book flights."
-  },
-  "actionGroups": [
-    {
-      "actionGroupName": "flights",
-      "actionGroupState": "ENABLED",
-      "actionGroupExecutor": {
-        "lambda": "arn:aws:lambda:eu-west-2:111122223333:function:flights"
-      },
-      "functionSchema": {
-        "functions": [
-          {
-            "name": "search_flights",
-            "description": "Find flights between two airports."
-          },
-          {
-            "name": "book_flight",
-            "description": "Book a flight.",
-            "requireConfirmation": "ENABLED"
-          },
-          {
-            "name": "cancel_booking",
-            "description": "Cancel a booking.",
-            "requireConfirmation": "DISABLED"
-          }
-        ]
-      }
-    },
-    {
-      "actionGroupName": "hotels",
-      "actionGroupState": "ENABLED",
-      "actionGroupExecutor": {
-        "lambda": "arn:aws:lambda:eu-west-2:111122223333:function:hotels"
-      },
-      "apiSchema": {
-        "payload": "{\"openapi\": \"3.0.0\", \"info\": {\"title\": \"Hotels API\", \"version\": \"1.0.0\"}, \"paths\": {\"/hotels\": {\"get\": {\"operationId\": \"searchHotels\", \"description\": \"Search hotels in a city.\"}}, \"/hotels/{hotelId}/reservations\": {\"post\": {\"operationId\": \"reserveHotel\", \"description\": \"Reserve a room.\"}}}}"
-      }
-    },
-    {
-      "actionGroupName": "code",
-      "actionGroupState": "ENABLED",
-      "parentActionGroupSignature": "AMAZON.CodeInterpreter"
-    },
-    {
-      "actionGroupName": "old-expenses",
-      "actionGroupState": "DISABLED",
-      "functionSchema": {
-        "functions": [
-          {
-            "name": "delete_expense",
-            "requireConfirmation": "DISABLED"
-          }
-        ]
-      }
-    }
-  ]
+    "foundationModel": "anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "instruction": "You are a travel assistant. Help employees book flights.",
+    "agentResourceRoleArn": "arn:aws:iam::111122223333:role/AmazonBedrockExecutionRoleForAgents_TRAVEL0001",
+    "idleSessionTTLInSeconds": 600,
+    "createdAt": "2026-09-14T10:00:00Z",
+    "updatedAt": "2026-09-30T16:20:00Z"
+  }
 }

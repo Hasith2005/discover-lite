@@ -2,20 +2,21 @@
   "type": "microsoft.copilotstudio/agents",
   "properties": {
     "displayName": "Facilities Desk",
-    "instructions": "You help staff report building problems such as broken lights, heating and cleaning. Pass each report to the facilities team and tell the person what happens next.",
     "authentication": "Microsoft Entra",
-    "sharedWithViewers": {"entireTenant": false},
+    "sharedWithViewers": {
+      "entireTenant": false
+    },
     "IsWebSearchEnabledForKnowledge": false,
     "powerPlatformConnectors": [
       {
         "operations": [
-          {"operationId": "RouteFacilitiesRequest", "usedAs": "Tool", "requiresEndUserConsent": false}
+          {
+            "operationId": "RouteFacilitiesRequest",
+            "usedAs": "Tool",
+            "requiresEndUserConsent": false
+          }
         ]
       }
-    ],
-    "topics": {
-      "broken_light": ["the light is broken", "bulb needs replacing"],
-      "heating": ["it is too cold", "heating not working"]
-    }
+    ]
   }
 }

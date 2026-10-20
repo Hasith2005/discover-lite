@@ -17,7 +17,7 @@ import typer
 
 from discover_lite.checks import secret_in_config
 from discover_lite import fetch_github, fetch_registry, stats
-from discover_lite.connectors import load_agents
+from discover_lite.connectors import bedrock_agent, load_agents, read_json
 from discover_lite.coverage import cell, coverage
 from discover_lite.mappings import load_mappings
 from discover_lite.report import SEVERITY_ORDER, build_report, default_policies, scan_path
@@ -27,7 +27,8 @@ app = typer.Typer(help="Static analyser for AI agent configurations.")
 
 # What a single file must be for a connector to read it.
 SUPPORTED = (
-    "a Copilot Studio agent, an AWS Bedrock agent, an MCP client config (Claude Desktop, "
+    "a Copilot Studio agent, an AWS Bedrock agent (GetAgent response), a Microsoft Foundry agent, "
+    "an MCP client config (Claude Desktop, "
     "Claude Code, Cursor, VS Code, Windsurf, Cline, Gemini CLI) or an MCP Registry page"
 )
 
@@ -39,6 +40,13 @@ def _scan(target: Path):
     """Scan the target; a single file no connector recognises is an error, not a clean result."""
     results = scan_path(target)
     if target.is_file() and not results:
+        if bedrock_agent.action_group(read_json(target)) is not None:
+            typer.echo(
+                f"{target}: a Bedrock action group is read together with its agent. "
+                "Scan the agent's GetAgent file or the folder instead.",
+                err=True,
+            )
+            raise typer.Exit(1)
         typer.echo(f"{target}: not a config Discover Lite can read. Supported: {SUPPORTED}.", err=True)
         raise typer.Exit(1)
     return results

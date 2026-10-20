@@ -21,7 +21,7 @@ from discover_lite.checks import (
     unpinned_package,
 )
 from discover_lite.cli import app
-from discover_lite.connectors import load_any
+from discover_lite.connectors import load_agents, load_any
 from discover_lite.models import Agent, McpServer, Tool
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
@@ -395,9 +395,12 @@ def test_prompt_injection_exposure_does_not_fire(fields):
 # --- topic_overlap ----------------------------------------------------------
 
 
-def test_topic_overlap_fires_for_hr_helper():
-    agent = load_any(FIXTURES / "copilot_hr_helper.json")
-    [finding] = topic_overlap(agent)
+def test_topic_overlap_fires_for_overlapping_topics():
+    topics = {
+        "reset_password": ["reset my password", "I forgot my password", "change my password"],
+        "unlock_account": ["unlock my account", "my account is locked", "locked out after too many password attempts"],
+    }
+    [finding] = topic_overlap(copilot_agent(topics=topics))
     assert finding.severity == "medium"
     assert "'reset_password' and 'unlock_account'" in finding.evidence
     assert "similarity 0.17" in finding.evidence
@@ -484,13 +487,17 @@ def test_no_guardrail_does_not_fire(guardrail):
 def test_fixtures_trigger_every_check():
     fired = set()
     for path in FIXTURES.rglob("*.json"):
-        fired |= {f.check_id for f in run_all(load_any(path))}
-    assert fired == {check.__name__ for check in ALL_CHECKS}
+        for agent in load_agents(path):
+            fired |= {f.check_id for f in run_all(agent)}
+    # No connector reads topics yet: the Copilot Studio inventory does not
+    # include them, so topic_overlap is only tested on built agents above.
+    assert fired == {check.__name__ for check in ALL_CHECKS} - {"topic_overlap"}
 
 
 def test_estate_has_clean_agents():
     # At least one well-set-up agent must pass every check.
-    clean = {load_any(p).name for p in FIXTURES.rglob("*.json") if not run_all(load_any(p))}
+    agents = [a for p in FIXTURES.rglob("*.json") for a in load_agents(p)]
+    clean = {a.name for a in agents if not run_all(a)}
     assert {"IT Helpdesk", "Claims Helper"} <= clean
 
 
@@ -505,7 +512,7 @@ def test_cli_json_output():
     result = CliRunner().invoke(app, ["scan", str(FIXTURES), "--json"])
     data = json.loads(result.output)
     by_name = {entry["agent"]["name"]: entry for entry in data}
-    assert len(data) == 12
+    assert len(data) == 14
     assert {"HR Helper", "Travel Booker", "web-app/.mcp.json"} <= set(by_name)
     hr = by_name["HR Helper"]
     # The agent takes its highest finding's AIVSS range, and every security
@@ -524,14 +531,14 @@ def test_stats_on_fixtures():
 
     agents, skipped = stats.collect(FIXTURES)
     rows = {label: (count, share) for label, count, share in stats.compute(agents, skipped)}
-    assert rows["Configs parsed"] == (12, "")
-    # Three MCP client files hold 9 servers between them.
-    assert rows["Servers"][0] == 9
+    assert rows["Configs parsed"] == (14, "")
+    # Three MCP client files hold 9 servers, and the two Foundry agents one each.
+    assert rows["Servers"][0] == 11
     # postgres and git are unpinned; the other four runners are pinned.
     assert rows["Package-runner servers with no exact version"] == (2, "33.3%")
-    # legacy-wiki is plain HTTP; the two other remotes use HTTPS.
-    assert rows["Remote servers on plain HTTP (non-local)"] == (1, "33.3%")
-    assert rows["Servers with a hard-coded secret"] == (1, "11.1%")
+    # legacy-wiki is plain HTTP; the four other remotes use HTTPS.
+    assert rows["Remote servers on plain HTTP (non-local)"] == (1, "20.0%")
+    assert rows["Servers with a hard-coded secret"] == (1, "9.1%")
     # The fixture password looks generated, so it is high, not a typed value.
     assert rows["Configs with only typed values under secret names (password or placeholder)"] == (0, "0.0%")
 

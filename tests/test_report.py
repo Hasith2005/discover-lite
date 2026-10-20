@@ -43,7 +43,7 @@ def test_top_issues_are_plain_sentences():
     issues = top_issues(scan_path(FIXTURES))
     assert len(issues) == 3
     # no_human_in_loop affects the most agents (HR Helper, Refunds Bot, Travel Booker).
-    assert issues[0] == "3 of 12 agents have a tool that changes data with no approval."
+    assert issues[0] == "4 of 14 agents have a tool that changes data with no approval."
 
 
 def test_report_command_writes_file(tmp_path):
@@ -65,7 +65,7 @@ def test_verify_command():
 def test_coverage_command():
     result = CliRunner().invoke(app, ["coverage", str(FIXTURES)])
     assert result.exit_code == 0
-    assert "| Guardrail setting | 2/2 | 0/7 | 0/3 |" in result.output
+    assert "| Guardrail setting | 2/2 | 0/7 | 1/2 | 0/3 |" in result.output
 
 
 def test_report_says_what_is_published_and_what_is_judgement():

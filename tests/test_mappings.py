@@ -39,5 +39,5 @@ def test_json_output_includes_mappings():
     findings = [f for entry in json.loads(result.output) for f in entry["findings"]]
     by_check = {f["check_id"]: f["mapping"] for f in findings}
     assert by_check["prompt_injection_exposure"]["owasp_llm_2026"] == ["LLM01"]
-    assert by_check["topic_overlap"]["category"] == "quality"
+    assert by_check["unclassified_tool"]["category"] == "quality"
     assert by_check["prompt_injection_exposure"]["atlas"] == ["AML.T0051.001", "AML.T0053"]

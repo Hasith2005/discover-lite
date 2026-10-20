@@ -1,0 +1,27 @@
+{
+  "agentActionGroup": {
+    "actionGroupId": "CLAIMSAG01",
+    "actionGroupName": "claims",
+    "agentId": "CLAIMS0001",
+    "agentVersion": "DRAFT",
+    "createdAt": "2026-09-14T10:05:00Z",
+    "updatedAt": "2026-09-30T16:20:00Z",
+    "actionGroupState": "ENABLED",
+    "actionGroupExecutor": {
+      "lambda": "arn:aws:lambda:eu-west-2:111122223333:function:claims"
+    },
+    "functionSchema": {
+      "functions": [
+        {
+          "name": "get_claim_status",
+          "description": "Status of a claim."
+        },
+        {
+          "name": "submit_claim",
+          "description": "Submit a new claim.",
+          "requireConfirmation": "ENABLED"
+        }
+      ]
+    }
+  }
+}

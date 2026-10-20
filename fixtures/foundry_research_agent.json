@@ -1,0 +1,36 @@
+{
+  "metadata": {},
+  "object": "agent.version",
+  "id": "research-agent:1",
+  "name": "research-agent",
+  "version": "1",
+  "description": "Answers questions from the team wiki",
+  "created_at": 1789891200,
+  "definition": {
+    "kind": "prompt",
+    "model": "gpt-4.1",
+    "instructions": "Answer research questions.",
+    "rai_config": {
+      "rai_policy_name": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-research/providers/Microsoft.CognitiveServices/accounts/research-ai/raiPolicies/Microsoft.DefaultV2"
+    },
+    "tools": [
+      {
+        "type": "file_search",
+        "vector_store_ids": ["vs_research_papers"]
+      },
+      {
+        "type": "mcp",
+        "server_label": "wiki",
+        "server_url": "https://wiki.example.com/mcp",
+        "allowed_tools": ["read_wiki_page", "update_wiki_page"]
+      },
+      {
+        "type": "function",
+        "name": "save_summary",
+        "description": "Save a summary of the answer to the user's notes.",
+        "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+        "strict": true
+      }
+    ]
+  }
+}

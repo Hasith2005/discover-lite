@@ -36,7 +36,7 @@ Every scanning command (`scan`, `report`, `verify`, `coverage`) takes either a f
 .venv/bin/discover-lite verify fixtures/copilot_refunds_bot.json                      # uses policies/ beside the file
 ```
 
-Supported files: Copilot Studio agents, AWS Bedrock agents, MCP client configs (Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Cline, Gemini CLI) and MCP Registry pages. A single file in any other format (an Azure AI Foundry agent, for example, which has no connector yet) stops with an error and exit code 1, so it is never mistaken for a clean result.
+Supported files: Copilot Studio agents, AWS Bedrock agents, Microsoft Foundry agents, MCP client configs (Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Cline, Gemini CLI) and MCP Registry pages. A single file in any other format (an OpenAI or Google ADK agent, for example, which has no connector yet) stops with an error and exit code 1, so it is never mistaken for a clean result.
 
 Real public data (the only commands that use the network):
 
@@ -72,13 +72,13 @@ Refunds Bot  (fixtures/policies/copilot_refunds_bot.yaml)
   PROVED   Every tool is covered: every tool has a rule
 ```
 
-Across all fixtures, `scan fixtures/` reports 12 agents and 20 findings (7 high, 10 medium, 3 low).
+Across all fixtures, `scan fixtures/` reports 14 agents and 20 findings (9 high, 8 medium, 3 low).
 
 ## How it fits together
 
 ```mermaid
 flowchart LR
-    F[Config files<br>Copilot Studio, Bedrock,<br>MCP clients, MCP Registry] --> C[Connectors<br>translate only]
+    F[Config files<br>Copilot Studio, Bedrock, Foundry,<br>MCP clients, MCP Registry] --> C[Connectors<br>translate only]
     C --> A[Agent model<br>None = platform does not say]
     A --> K[Checks<br>pure rules]
     K --> S[Score<br>OWASP AIVSS v0.8]
@@ -106,7 +106,7 @@ flowchart LR
 | `broad_filesystem_access` | medium | A filesystem server given a whole disk or home folder | LLM03 | AML.T0037, AML.T0112.000 | Map, Manage |
 | `missing_scope` | medium | Instructions under 10 words | LLM03 | AML.T0051.000, AML.T0054 | Govern, Map |
 | `no_guardrail` | medium | No guardrail attached (Bedrock) | LLM01, LLM02 | AML.T0051, AML.T0054, AML.T0057 | Manage |
-| `topic_overlap` | medium | Two topics whose trigger phrases overlap (TF-IDF), naming the shared words | quality finding | none (quality) | Measure |
+| `topic_overlap` | medium | Two topics whose trigger phrases overlap (TF-IDF), naming the shared words. No current connector supplies topics, so it runs only on agents that have them | quality finding | none (quality) | Measure |
 | `unclassified_tool` | low | A tool we cannot classify, running without approval | quality finding | none (quality) | Map |
 
 Vendor key formats come from the default rules of [gitleaks](https://github.com/gitleaks/gitleaks) (MIT licence), copied unchanged into `src/discover_lite/rules/`.
@@ -177,7 +177,7 @@ The policy format is our own: no platform exports policies in this shape. It sho
 src/discover_lite/
   models.py            Agent, Tool, McpServer and Finding (pydantic)
   connectors/          one read-only parser per format: Copilot Studio, Bedrock,
-                       MCP client configs, MCP Registry pages
+                       Foundry, MCP client configs, MCP Registry pages
   checks/__init__.py   the posture checks, registered in ALL_CHECKS
   secret_rules.py      gitleaks' vendor key rules and an entropy measure
   rules/               gitleaks' default rules, unchanged, with their licence
@@ -203,8 +203,10 @@ docs/                  findings on real data and the coverage write-up
 ## What is real and what is modelled
 
 - **Real data:** 45,372 servers from the official MCP Registry and public MCP client configs from GitHub. Results are in `docs/registry-findings.md` and `docs/github-findings.md`. Only aggregate counts are reported; no repository is named and every secret is redacted.
-- **Real field names, synthetic values:** the Copilot Studio and Bedrock fixtures. Copilot Studio fields follow Microsoft's [agent inventory schema](https://learn.microsoft.com/microsoft-copilot-studio/admin-agent-inventory) (`authentication`, `sharedWithViewers.entireTenant`, `IsWebSearchEnabledForKnowledge`, `powerPlatformConnectors[].operations[]` with `usedAs` and `requiresEndUserConsent`). `instructions` and `topics` are our own additions, and so is `method` on each operation: in the real inventory the HTTP method sits on the separate connector records and would need a join. Bedrock fields follow the `bedrock-agent` API (`GetAgent`, `GetAgentActionGroup`); bundling the responses into one file is our choice.
-- **Real formats, synthetic values:** the MCP client fixtures. `fixtures/vscode/mcp.json` follows VS Code's format (`servers`, `inputs`, `${input:...}`) and `fixtures/web-app/.mcp.json` follows Claude Code's. The Claude Desktop fixture also lists two remote servers to exercise the transport checks; Claude Desktop itself adds remote servers through its Connectors settings rather than this file.
+- **Real field names, synthetic values:** the Copilot Studio fixtures use only fields in Microsoft's [agent inventory schema](https://learn.microsoft.com/microsoft-copilot-studio/admin-agent-inventory) (`authentication`, `sharedWithViewers.entireTenant`, `IsWebSearchEnabledForKnowledge`, `powerPlatformConnectors[]` with `connectorId` and `operations[]`). The inventory has no instructions, topics or per-operation HTTP method, so the connector does not read any. Custom connectors in the fixtures have no `connectorId`, because their IDs are environment-specific and undocumented.
+- **Real response shapes, synthetic values:** the Bedrock fixtures are saved `bedrock-agent` API responses, one per call: a `GetAgent` response (`*.json`) and a `GetAgentActionGroup` response for each action group (`*.actiongroup_*.json`), joined on `agentId` and `agentVersion`. Scan the agent file or the folder; an action group file on its own is not an agent.
+- **Real response shape, synthetic values:** the Microsoft Foundry fixtures. Each file is one unchanged response from the Foundry Agent Service REST API (`GET /agents/{name}` or `GET /agents/{name}/versions/{version}`, `api-version=v1`), and every field the connector reads is in the [Foundry REST reference](https://learn.microsoft.com/rest/api/microsoft-foundry/aiproject). Nothing in the format is ours.
+- **Real formats, synthetic values:** the MCP client fixtures. `fixtures/vscode/mcp.json` follows VS Code's format (`servers`, `inputs`, `${input:...}`) and `fixtures/web-app/.mcp.json` follows Claude Code's, including its remote `type: http` servers. The Claude Desktop fixture holds only local servers, as Claude Desktop adds remote ones through its Connectors settings.
 - **Our own format:** the tool policy files in `fixtures/policies/`.
 
 `docs/coverage.md` sets out what each platform exposes, what is missing, and the one signal I would most want from each.
@@ -219,6 +221,7 @@ docs/                  findings on real data and the coverage write-up
 - AIVSS raises low CVSS scores a lot in a highly agentic context (the spec's own example takes 2.1 to 7.1), so most agents with any finding score High or Critical at the top of the range.
 - The checks detect concrete settings; the frameworks describe categories of risk, not configuration rules. Mapping a check to a framework entry is therefore a judgement, recorded with its reason in `mappings.yaml`. The NIST AI RMF tags are the coarsest: the framework has only four functions.
 - `missing_scope`'s 10-word threshold is our own choice, not taken from any standard.
+- Copilot Studio's inventory holds no instructions or topics, so `missing_scope` and `topic_overlap` cannot run on Copilot Studio agents until a second source is read.
 
 ## Licence
 
